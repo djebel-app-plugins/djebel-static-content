@@ -50,19 +50,19 @@ class Djebel_Plugin_Static_Blog
         ob_start();
         ?>
         <style>
-        .djebel-blog-container {
+        .djebel-plugin-static-blog-container {
             max-width: 900px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
 
-        .djebel-blog-title {
+        .djebel-plugin-static-blog-title {
             font-size: 2rem;
             font-weight: 600;
             margin-bottom: 2rem;
             color: #1f2937;
         }
 
-        .djebel-blog-post {
+        .djebel-plugin-static-blog-post {
             border: 1px solid #e5e7eb;
             border-radius: 8px;
             margin-bottom: 1.5rem;
@@ -71,37 +71,37 @@ class Djebel_Plugin_Static_Blog
             transition: all 0.2s ease;
         }
 
-        .djebel-blog-post:hover {
+        .djebel-plugin-static-blog-post:hover {
             border-color: #d1d5db;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
-        .djebel-blog-post-title {
+        .djebel-plugin-static-blog-post-title {
             font-size: 1.5rem;
             font-weight: 600;
             margin-bottom: 0.5rem;
             color: #1f2937;
         }
 
-        .djebel-blog-post-meta {
+        .djebel-plugin-static-blog-post-meta {
             font-size: 0.875rem;
             color: #6b7280;
             margin-bottom: 1rem;
         }
 
-        .djebel-blog-post-excerpt {
+        .djebel-plugin-static-blog-post-summary {
             color: #374151;
             line-height: 1.6;
             margin-bottom: 1rem;
         }
 
-        .djebel-blog-post-tags {
+        .djebel-plugin-static-blog-post-tags {
             display: flex;
             gap: 0.5rem;
             flex-wrap: wrap;
         }
 
-        .djebel-blog-tag {
+        .djebel-plugin-static-blog-tag {
             background: #f3f4f6;
             padding: 0.25rem 0.75rem;
             border-radius: 4px;
@@ -110,39 +110,39 @@ class Djebel_Plugin_Static_Blog
         }
         </style>
 
-        <div class="djebel-blog-container">
+        <div class="djebel-plugin-static-blog-container">
             <?php if ($render_title || !empty($params['title'])): ?>
-                <h2 class="djebel-blog-title"><?php echo esc_html($title); ?></h2>
+                <h2 class="djebel-plugin-static-blog-title"><?php echo Djebel_App_HTML::encodeEntities($title); ?></h2>
             <?php endif; ?>
 
-            <?php foreach ($blog_data as $post): ?>
-                <article class="djebel-blog-post">
-                    <h3 class="djebel-blog-post-title"><?php echo esc_html($post['title']); ?></h3>
+            <?php foreach ($blog_data as $post_rec): ?>
+                <article class="djebel-plugin-static-blog-post">
+                    <h3 class="djebel-plugin-static-blog-post-title"><?php echo Djebel_App_HTML::encodeEntities($post_rec['title']); ?></h3>
 
-                    <div class="djebel-blog-post-meta">
-                        <?php if (!empty($post['creation_date'])): ?>
-                            <span><?php echo esc_html(date('F j, Y', strtotime($post['creation_date']))); ?></span>
+                    <div class="djebel-plugin-static-blog-post-meta">
+                        <?php if (!empty($post_rec['creation_date'])): ?>
+                            <span><?php echo Djebel_App_HTML::encodeEntities(date('F j, Y', strtotime($post_rec['creation_date']))); ?></span>
                         <?php endif; ?>
 
-                        <?php if (!empty($post['author'])): ?>
-                            <span> · by <?php echo esc_html($post['author']); ?></span>
+                        <?php if (!empty($post_rec['author'])): ?>
+                            <span> · by <?php echo Djebel_App_HTML::encodeEntities($post_rec['author']); ?></span>
                         <?php endif; ?>
 
-                        <?php if (!empty($post['category'])): ?>
-                            <span> · <?php echo esc_html($post['category']); ?></span>
+                        <?php if (!empty($post_rec['category'])): ?>
+                            <span> · <?php echo Djebel_App_HTML::encodeEntities($post_rec['category']); ?></span>
                         <?php endif; ?>
                     </div>
 
-                    <?php if (!empty($post['excerpt'])): ?>
-                        <div class="djebel-blog-post-excerpt">
-                            <?php echo esc_html($post['excerpt']); ?>
+                    <?php if (!empty($post_rec['summary'])): ?>
+                        <div class="djebel-plugin-static-blog-post-summary">
+                            <?php echo Djebel_App_HTML::encodeEntities($post_rec['summary']); ?>
                         </div>
                     <?php endif; ?>
 
-                    <?php if (!empty($post['tags']) && is_array($post['tags'])): ?>
-                        <div class="djebel-blog-post-tags">
-                            <?php foreach ($post['tags'] as $tag): ?>
-                                <span class="djebel-blog-tag"><?php echo esc_html($tag); ?></span>
+                    <?php if (!empty($post_rec['tags'])): ?>
+                        <div class="djebel-plugin-static-blog-post-tags">
+                            <?php foreach ((array)$post_rec['tags'] as $tag): ?>
+                                <span class="djebel-plugin-static-blog-tag"><?php echo Djebel_App_HTML::encodeEntities($tag); ?></span>
                             <?php endforeach; ?>
                         </div>
                     <?php endif; ?>
@@ -203,10 +203,10 @@ class Djebel_Plugin_Static_Blog
             $md_files = $this->scanMarkdownFiles($scan_dir);
 
             foreach ($md_files as $file) {
-                $post = $this->loadPostFromMarkdown($file);
+                $post_rec = $this->loadPostFromMarkdown($file);
 
-                if ($post) {
-                    $blog_data[] = $post;
+                if ($post_rec) {
+                    $blog_data[] = $post_rec;
                 }
             }
         }
@@ -322,7 +322,7 @@ class Djebel_Plugin_Static_Blog
         $result = [
             'title' => isset($meta['title']) ? $meta['title'] : '',
             'content' => $html_content,
-            'excerpt' => isset($meta['excerpt']) ? $meta['excerpt'] : '',
+            'summary' => isset($meta['summary']) ? $meta['summary'] : '',
             'creation_date' => isset($meta['creation_date']) ? $meta['creation_date'] : '',
             'last_modified' => isset($meta['last_modified']) ? $meta['last_modified'] : '',
             'sort_order' => isset($meta['sort_order']) ? (int)$meta['sort_order'] : 0,
