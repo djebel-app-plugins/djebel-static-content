@@ -23,11 +23,16 @@ Dj_App_Hooks::addAction('app.core.init', [$obj, 'init']);
 
 class Djebel_Plugin_Static_Blog
 {
+    public const STATUS_DRAFT = 'draft';
+    public const STATUS_PUBLISHED = 'published';
+    public const PARTIAL_READ_BYTES = 512;
+    public const FULL_READ_BYTES = 5242880;
+
     private $plugin_id = 'djebel-static-blog';
     private $cache_dir;
     private $current_collection_id;
     private $sort_by = 'file';
-    private $statuses = ['draft', 'published'];
+    private $statuses = [self::STATUS_DRAFT, self::STATUS_PUBLISHED];
 
     public function init()
     {
@@ -35,6 +40,14 @@ class Djebel_Plugin_Static_Blog
 
         $shortcode_obj = Dj_App_Shortcode::getInstance();
         $shortcode_obj->addShortcode('djebel_static_blog', [$this, 'renderBlog']);
+    }
+
+    public function getStatuses()
+    {
+        $statuses = $this->statuses;
+        $statuses = Dj_App_Hooks::applyFilter('app.plugin.static_blog.statuses', $statuses);
+
+        return $statuses;
     }
 
     public function renderBlog($params = [])
@@ -80,7 +93,15 @@ class Djebel_Plugin_Static_Blog
             font-size: 1.5rem;
             font-weight: 600;
             margin-bottom: 0.5rem;
+        }
+
+        .djebel-plugin-static-blog-post-title a {
             color: #1f2937;
+            text-decoration: none;
+        }
+
+        .djebel-plugin-static-blog-post-title a:hover {
+            color: #3b82f6;
         }
 
         .djebel-plugin-static-blog-post-meta {
@@ -117,7 +138,11 @@ class Djebel_Plugin_Static_Blog
 
             <?php foreach ($blog_data as $post_rec): ?>
                 <article class="djebel-plugin-static-blog-post">
-                    <h3 class="djebel-plugin-static-blog-post-title"><?php echo Djebel_App_HTML::encodeEntities($post_rec['title']); ?></h3>
+                    <h3 class="djebel-plugin-static-blog-post-title">
+                        <a href="<?php echo Djebel_App_HTML::encodeEntities($post_rec['url']); ?>">
+                            <?php echo Djebel_App_HTML::encodeEntities($post_rec['title']); ?>
+                        </a>
+                    </h3>
 
                     <div class="djebel-plugin-static-blog-post-meta">
                         <?php if (!empty($post_rec['creation_date'])): ?>
@@ -141,7 +166,7 @@ class Djebel_Plugin_Static_Blog
 
                     <?php if (!empty($post_rec['tags'])): ?>
                         <div class="djebel-plugin-static-blog-post-tags">
-                            <?php foreach ((array)$post_rec['tags'] as $tag): ?>
+                            <?php foreach ($post_rec['tags'] as $tag): ?>
                                 <span class="djebel-plugin-static-blog-tag"><?php echo Djebel_App_HTML::encodeEntities($tag); ?></span>
                             <?php endforeach; ?>
                         </div>
@@ -203,11 +228,15 @@ class Djebel_Plugin_Static_Blog
             $md_files = $this->scanMarkdownFiles($scan_dir);
 
             foreach ($md_files as $file) {
-                $post_rec = $this->loadPostFromMarkdown($file);
+                $post_rec = $this->loadPostFromMarkdown(['file' => $file, 'partial' => true]);
 
-                if ($post_rec) {
-                    $blog_data[] = $post_rec;
+                if (empty($post_rec)) {
+                    continue;
                 }
+
+                $hash_id = $post_rec['hash_id'];
+                $post_rec['url'] = $this->generatePostUrl(['slug' => $post_rec['slug'], 'hash_id' => $hash_id]);
+                $blog_data[$hash_id] = $post_rec;
             }
         }
 
@@ -285,28 +314,47 @@ class Djebel_Plugin_Static_Blog
         return $data_dir;
     }
 
-    private function loadPostFromMarkdown($file)
+    private function loadPostFromMarkdown($params)
     {
+        $file = $params['file'];
+        $partial = empty($params['partial']) ? false : true;
+
         if (!file_exists($file)) {
-            return false;
+            return [];
         }
 
-        $file_content = Dj_App_File_Util::read($file);
+        $max_len = $partial ? self::PARTIAL_READ_BYTES : self::FULL_READ_BYTES;
+        $res_obj = Dj_App_File_Util::readPartially($file, $max_len);
+
+        if ($res_obj->isError()) {
+            return [];
+        }
+
+        $file_content = $res_obj->output;
 
         if (empty($file_content)) {
-            return false;
+            return [];
         }
 
         $meta = Dj_App_Util::extractMetaInfo($file_content);
+        $status = empty($meta['status']) ? self::STATUS_PUBLISHED : $meta['status'];
 
-        $status = isset($meta['status']) ? $meta['status'] : 'published';
-
-        if (!in_array($status, $this->statuses)) {
-            $status = 'published';
+        if ($status === self::STATUS_DRAFT) {
+            return [];
         }
 
-        if ($status === 'draft') {
-            return false;
+        $statuses = $this->getStatuses();
+
+        if (!in_array($status, $statuses)) {
+            $status = self::STATUS_PUBLISHED;
+        }
+
+        if (!empty($meta['publish_date'])) {
+            $publish_timestamp = strtotime($meta['publish_date']);
+
+            if ($publish_timestamp && $publish_timestamp > time()) {
+                return [];
+            }
         }
 
         $ctx = [
@@ -326,22 +374,80 @@ class Djebel_Plugin_Static_Blog
             $hash_id = $this->parseHashId($file);
         }
 
+        $defaults = [
+            'title' => '',
+            'summary' => '',
+            'creation_date' => '',
+            'last_modified' => '',
+            'publish_date' => '',
+            'sort_order' => 0,
+            'category' => '',
+            'tags' => [],
+            'author' => '',
+            'slug' => '',
+        ];
+
+        foreach ($defaults as $key => $default_value) {
+            if (empty($meta[$key])) {
+                $meta[$key] = $default_value;
+            }
+        }
+
+        if (is_string($meta['tags'])) {
+            $meta['tags'] = (array) $meta['tags'];
+        }
+
+        $meta['sort_order'] = (int) $meta['sort_order'];
+
+        $title = $meta['title'];
+        $slug = empty($meta['slug']) ? Dj_App_String_Util::formatSlug($title) : $meta['slug'];
+
         $result = [
             'hash_id' => $hash_id,
-            'title' => isset($meta['title']) ? $meta['title'] : '',
+            'title' => $title,
+            'slug' => $slug,
             'content' => $html_content,
-            'summary' => isset($meta['summary']) ? $meta['summary'] : '',
-            'creation_date' => isset($meta['creation_date']) ? $meta['creation_date'] : '',
-            'last_modified' => isset($meta['last_modified']) ? $meta['last_modified'] : '',
-            'sort_order' => isset($meta['sort_order']) ? (int)$meta['sort_order'] : 0,
-            'category' => isset($meta['category']) ? $meta['category'] : '',
-            'tags' => isset($meta['tags']) ? (array) $meta['tags'] : [],
-            'author' => isset($meta['author']) ? $meta['author'] : '',
+            'summary' => $meta['summary'],
+            'creation_date' => $meta['creation_date'],
+            'last_modified' => $meta['last_modified'],
+            'publish_date' => $meta['publish_date'],
+            'sort_order' => $meta['sort_order'],
+            'category' => $meta['category'],
+            'tags' => $meta['tags'],
+            'author' => $meta['author'],
             'status' => $status,
             'file' => $file,
         ];
 
         return $result;
+    }
+
+    /**
+     * Generate post URL from post data
+     * @param array $data
+     * @return string
+     */
+    private function generatePostUrl($data)
+    {
+        if (!empty($data['site_url'])) {
+            $site_url = $data['site_url'];
+        } else {
+            $req_obj = Dj_App_Request::getInstance();
+            $site_url = $req_obj->getSiteUrl();
+        }
+
+        $slug_parts = [$data['slug']];
+
+        if (!empty($data['hash_id'])) {
+            $slug_parts[] = $data['hash_id'];
+        }
+
+        $full_slug = implode('-', $slug_parts);
+        $full_slug = Dj_App_String_Util::formatSlug($full_slug);
+
+        $post_url = $site_url . '/' . $full_slug;
+
+        return $post_url;
     }
 
     /**
