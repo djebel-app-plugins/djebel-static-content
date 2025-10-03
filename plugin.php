@@ -461,12 +461,16 @@ class Djebel_Plugin_Static_Blog
      */
     private function generatePostUrl($data)
     {
-        if (!empty($data['site_url'])) {
-            $site_url = $data['site_url'];
+        $req_obj = Dj_App_Request::getInstance();
+
+        if (!empty($data['base_url'])) {
+            $base_url = $data['base_url'];
         } else {
-            $req_obj = Dj_App_Request::getInstance();
-            $site_url = $req_obj->getSiteUrl();
+            $base_url = $req_obj->getCleanRequestUrl();
         }
+
+        $ctx = ['data' => $data];
+        $base_url = Dj_App_Hooks::applyFilter('app.plugin.static_blog.post_base_url', $base_url, $ctx);
 
         $slug_parts = [$data['slug']];
 
@@ -489,7 +493,7 @@ class Djebel_Plugin_Static_Blog
         $full_slug = implode('-', $slug_parts);
         $full_slug = Dj_App_String_Util::formatSlug($full_slug);
 
-        $post_url = $site_url . '/' . $full_slug;
+        $post_url = $base_url . '/' . $full_slug;
 
         return $post_url;
     }
