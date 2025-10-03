@@ -261,13 +261,14 @@ class Djebel_Plugin_Static_Blog
         }
 
         $directory = new RecursiveDirectoryIterator($scan_dir, RecursiveDirectoryIterator::SKIP_DOTS);
-        $iterator = new RecursiveIteratorIterator($directory);
 
-        $filtered = new RecursiveCallbackFilterIterator($iterator, function($file) {
-            return $file->isFile() && $file->getExtension() === 'md';
+        $filtered = new RecursiveCallbackFilterIterator($directory, function($file) {
+            return $file->getExtension() === 'md' && $file->isFile();
         });
 
-        foreach ($filtered as $file) {
+        $iterator = new RecursiveIteratorIterator($filtered);
+
+        foreach ($iterator as $file) {
             $md_files[] = $file->getPathname();
         }
 
