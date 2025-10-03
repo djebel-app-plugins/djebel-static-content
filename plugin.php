@@ -319,7 +319,14 @@ class Djebel_Plugin_Static_Blog
             $html_content = $file_content;
         }
 
+        $hash_id = !empty($meta['id']) ? $meta['id'] : '';
+
+        if (empty($hash_id)) {
+            $hash_id = $this->parseHashId($file);
+        }
+
         $result = [
+            'hash_id' => $hash_id,
             'title' => isset($meta['title']) ? $meta['title'] : '',
             'content' => $html_content,
             'summary' => isset($meta['summary']) ? $meta['summary'] : '',
@@ -334,6 +341,34 @@ class Djebel_Plugin_Static_Blog
         ];
 
         return $result;
+    }
+
+    /**
+     * Parse hash ID from string (filename or URL)
+     * Extracts 10-12 character alphanumeric hash from end of string
+     * @param string $str
+     * @return string
+     */
+    public function parseHashId($str)
+    {
+        if (empty($str)) {
+            return '';
+        }
+
+        $str = basename($str, '.md');
+        $str = substr($str, -15);
+
+        if (!Dj_App_String_Util::isAlphaNumericExt($str)) {
+            return '';
+        }
+
+        $str = strtolower($str);
+
+        if (preg_match('#[\-\_]([a-z\d]{10,12})$#i', $str, $matches)) {
+            return $matches[1];
+        }
+
+        return '';
     }
 
     private function sortPosts($a, $b)
