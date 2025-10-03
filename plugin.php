@@ -31,7 +31,6 @@ class Djebel_Plugin_Static_Blog
 
     private $plugin_id = 'djebel-static-blog';
     private $cache_dir;
-    private $current_collection_id;
     private $sort_by = 'file';
     private $statuses = [self::STATUS_DRAFT, self::STATUS_PUBLISHED];
 
@@ -41,6 +40,7 @@ class Djebel_Plugin_Static_Blog
 
         $shortcode_obj = Dj_App_Shortcode::getInstance();
         $shortcode_obj->addShortcode('djebel_static_blog', [$this, 'renderBlog']);
+        $shortcode_obj->addShortcode('djebel_static_blog_post', [$this, 'renderPost']);
     }
 
     public function getStatuses()
@@ -51,6 +51,61 @@ class Djebel_Plugin_Static_Blog
         return $statuses;
     }
 
+    public function renderPost($params = [])
+    {
+        $req_obj = Dj_App_Request::getInstance();
+        $hash_id = $req_obj->get('hash_id');
+
+        if (empty($hash_id)) {
+            return "<!--\nNo post hash_id provided\n-->";
+        }
+
+        $blog_data = $this->getBlogData($params);
+
+        if (empty($blog_data[$hash_id])) {
+            return "<!--\nPost not found\n-->";
+        }
+
+        $post_rec = $blog_data[$hash_id];
+
+        ob_start();
+        ?>
+        <article class="djebel-plugin-static-blog-post-single">
+            <h1 class="djebel-plugin-static-blog-post-single-title"><?php echo Djebel_App_HTML::encodeEntities($post_rec['title']); ?></h1>
+
+            <div class="djebel-plugin-static-blog-post-single-meta">
+                <?php if (!empty($post_rec['creation_date'])): ?>
+                    <span><?php echo Djebel_App_HTML::encodeEntities(date('F j, Y', strtotime($post_rec['creation_date']))); ?></span>
+                <?php endif; ?>
+
+                <?php if (!empty($post_rec['author'])): ?>
+                    <span> · by <?php echo Djebel_App_HTML::encodeEntities($post_rec['author']); ?></span>
+                <?php endif; ?>
+
+                <?php if (!empty($post_rec['category'])): ?>
+                    <span> · <?php echo Djebel_App_HTML::encodeEntities($post_rec['category']); ?></span>
+                <?php endif; ?>
+            </div>
+
+            <?php if (!empty($post_rec['tags'])): ?>
+                <div class="djebel-plugin-static-blog-post-single-tags">
+                    <?php foreach ($post_rec['tags'] as $tag): ?>
+                        <span class="djebel-plugin-static-blog-tag"><?php echo Djebel_App_HTML::encodeEntities($tag); ?></span>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+
+            <div class="djebel-plugin-static-blog-post-single-content">
+                <?php echo $post_rec['content']; ?>
+            </div>
+        </article>
+        <?php
+        $html = ob_get_clean();
+        $html = Dj_App_Hooks::applyFilter('app.plugin.static_blog.render_blog_post', $html, $post_rec);
+
+        return $html;
+    }
+
     public function renderBlog($params = [])
     {
         $title = empty($params['title']) ? 'Blog Posts' : trim($params['title']);
@@ -58,7 +113,7 @@ class Djebel_Plugin_Static_Blog
         $blog_data = $this->getBlogData($params);
 
         if (empty($blog_data)) {
-            return '<!-- No blog posts available -->';
+            return "<!--\nNo blog posts available\n-->";
         }
 
         $req_obj = Dj_App_Request::getInstance();
@@ -73,7 +128,7 @@ class Djebel_Plugin_Static_Blog
         $blog_data = array_slice($blog_data, $offset, $per_page, true);
 
         if (empty($blog_data)) {
-            return '<!-- No blog posts available on this page -->';
+            return "<!--\nNo blog posts available on this page\n-->";
         }
 
         ob_start();
@@ -200,15 +255,15 @@ class Djebel_Plugin_Static_Blog
             <?php endif; ?>
         </div>
         <?php
-        return ob_get_clean();
+        $html = ob_get_clean();
+        $html = Dj_App_Hooks::applyFilter('app.plugin.static_blog.render_blog', $html, $blog_data, $params);
+
+        return $html;
     }
 
     public function getBlogData($params = [])
     {
-        $collection_id = empty($params['id']) ? 'default' : trim($params['id']);
-        $this->current_collection_id = Dj_App_String_Util::formatSlug($collection_id);
-
-        $cache_key = $this->plugin_id . '-' . $this->current_collection_id;
+        $cache_key = $this->plugin_id;
         $cache_params = ['plugin' => $this->plugin_id, 'ttl' => 8 * 60 * 60];
 
         $options_obj = Dj_App_Options::getInstance();
@@ -229,10 +284,9 @@ class Djebel_Plugin_Static_Blog
         return $blog_data;
     }
 
-    public function clearCache($collection_id = 'default')
+    public function clearCache()
     {
-        $formatted_id = Dj_App_String_Util::formatSlug($collection_id);
-        $cache_key = $this->plugin_id . '-' . $formatted_id;
+        $cache_key = $this->plugin_id;
         $cache_params = ['plugin' => $this->plugin_id];
 
         $result = Dj_App_Cache::remove($cache_key, $cache_params);
@@ -331,10 +385,7 @@ class Djebel_Plugin_Static_Blog
 
     private function getDataDirectory($params = [])
     {
-        $collection_id = empty($params['id']) ? 'default' : trim($params['id']);
-        $formatted_id = Dj_App_String_Util::formatSlug($collection_id);
-
-        $data_dir = Dj_App_Util::getCorePrivateDataDir(['plugin' => $this->plugin_id]) . '/' . $formatted_id;
+        $data_dir = Dj_App_Util::getCorePrivateDataDir(['plugin' => $this->plugin_id]) . '/posts';
 
         return $data_dir;
     }
@@ -425,7 +476,14 @@ class Djebel_Plugin_Static_Blog
         $meta['sort_order'] = (int) $meta['sort_order'];
 
         $title = $meta['title'];
-        $slug = empty($meta['slug']) ? Dj_App_String_Util::formatSlug($title) : $meta['slug'];
+
+        if (empty($meta['slug'])) {
+            $slug = basename($file, '.md');
+            $slug = preg_replace('#^[\d\-_]+#', '', $slug);
+            $slug = Dj_App_String_Util::formatSlug($slug);
+        } else {
+            $slug = $meta['slug'];
+        }
 
         $result = [
             'hash_id' => $hash_id,
