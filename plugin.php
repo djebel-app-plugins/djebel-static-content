@@ -27,6 +27,7 @@ class Djebel_Plugin_Static_Blog
     public const STATUS_PUBLISHED = 'published';
     public const PARTIAL_READ_BYTES = 512;
     public const FULL_READ_BYTES = 5242880;
+    public const DEFAULT_RECORDS_PER_PAGE = 10;
 
     private $plugin_id = 'djebel-static-blog';
     private $cache_dir;
@@ -60,33 +61,27 @@ class Djebel_Plugin_Static_Blog
             return '<!-- No blog posts available -->';
         }
 
+        $req_obj = Dj_App_Request::getInstance();
+        $current_page = (int) $req_obj->get('djebel_plugin_static_blog_page');
+        $current_page = max(1, $current_page);
+
+        $per_page = empty($params['per_page']) ? self::DEFAULT_RECORDS_PER_PAGE : (int) $params['per_page'];
+        $total_posts = count($blog_data);
+        $total_pages = ceil($total_posts / $per_page);
+        $offset = ($current_page - 1) * $per_page;
+
+        $blog_data = array_slice($blog_data, $offset, $per_page, true);
+
+        if (empty($blog_data)) {
+            return '<!-- No blog posts available on this page -->';
+        }
+
         ob_start();
         ?>
         <style>
-        .djebel-plugin-static-blog-container {
-            max-width: 900px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        }
-
-        .djebel-plugin-static-blog-title {
-            font-size: 2rem;
-            font-weight: 600;
-            margin-bottom: 2rem;
-            color: #1f2937;
-        }
-
         .djebel-plugin-static-blog-post {
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
             margin-bottom: 1.5rem;
             padding: 1.5rem;
-            background: #ffffff;
-            transition: all 0.2s ease;
-        }
-
-        .djebel-plugin-static-blog-post:hover {
-            border-color: #d1d5db;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
         .djebel-plugin-static-blog-post-title {
@@ -96,22 +91,15 @@ class Djebel_Plugin_Static_Blog
         }
 
         .djebel-plugin-static-blog-post-title a {
-            color: #1f2937;
             text-decoration: none;
-        }
-
-        .djebel-plugin-static-blog-post-title a:hover {
-            color: #3b82f6;
         }
 
         .djebel-plugin-static-blog-post-meta {
             font-size: 0.875rem;
-            color: #6b7280;
             margin-bottom: 1rem;
         }
 
         .djebel-plugin-static-blog-post-summary {
-            color: #374151;
             line-height: 1.6;
             margin-bottom: 1rem;
         }
@@ -123,11 +111,25 @@ class Djebel_Plugin_Static_Blog
         }
 
         .djebel-plugin-static-blog-tag {
-            background: #f3f4f6;
             padding: 0.25rem 0.75rem;
-            border-radius: 4px;
             font-size: 0.875rem;
-            color: #4b5563;
+        }
+
+        .djebel-plugin-static-blog-pagination {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+        }
+
+        .djebel-plugin-static-blog-pagination a {
+            padding: 0.5rem 1rem;
+            text-decoration: none;
+        }
+
+        .djebel-plugin-static-blog-pagination span {
+            padding: 0.5rem 1rem;
         }
         </style>
 
@@ -173,6 +175,29 @@ class Djebel_Plugin_Static_Blog
                     <?php endif; ?>
                 </article>
             <?php endforeach; ?>
+
+            <?php if ($total_pages > 1): ?>
+                <?php
+                $current_url = $req_obj->getRequestUri();
+                $prev_url = Dj_App_Request::addQueryParam('djebel_plugin_static_blog_page', $current_page - 1, $current_url);
+                $next_url = Dj_App_Request::addQueryParam('djebel_plugin_static_blog_page', $current_page + 1, $current_url);
+                ?>
+                <div class="djebel-plugin-static-blog-pagination">
+                    <?php if ($current_page > 1): ?>
+                        <a href="<?php echo Djebel_App_HTML::encodeEntities($prev_url); ?>">← Previous</a>
+                    <?php else: ?>
+                        <span>← Previous</span>
+                    <?php endif; ?>
+
+                    <span>Page <?php echo $current_page; ?> of <?php echo $total_pages; ?></span>
+
+                    <?php if ($current_page < $total_pages): ?>
+                        <a href="<?php echo Djebel_App_HTML::encodeEntities($next_url); ?>">Next →</a>
+                    <?php else: ?>
+                        <span>Next →</span>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
         </div>
         <?php
         return ob_get_clean();
