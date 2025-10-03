@@ -101,7 +101,8 @@ class Djebel_Plugin_Static_Blog
         </article>
         <?php
         $html = ob_get_clean();
-        $html = Dj_App_Hooks::applyFilter('app.plugin.static_blog.render_blog_post', $html, $post_rec);
+        $ctx = ['post_rec' => $post_rec];
+        $html = Dj_App_Hooks::applyFilter('app.plugin.static_blog.render_blog_post', $html, $ctx);
 
         return $html;
     }
@@ -256,7 +257,8 @@ class Djebel_Plugin_Static_Blog
         </div>
         <?php
         $html = ob_get_clean();
-        $html = Dj_App_Hooks::applyFilter('app.plugin.static_blog.render_blog', $html, $blog_data, $params);
+        $ctx = ['blog_data' => $blog_data, 'params' => $params];
+        $html = Dj_App_Hooks::applyFilter('app.plugin.static_blog.render_blog', $html, $ctx);
 
         return $html;
     }
@@ -485,6 +487,8 @@ class Djebel_Plugin_Static_Blog
             $slug = $meta['slug'];
         }
 
+        $slug = Dj_App_Hooks::applyFilter('app.plugin.static_blog.post_slug', $slug, $ctx);
+
         $result = [
             'hash_id' => $hash_id,
             'title' => $title,
@@ -522,7 +526,19 @@ class Djebel_Plugin_Static_Blog
         $slug_parts = [$data['slug']];
 
         if (!empty($data['hash_id'])) {
-            $slug_parts[] = $data['hash_id'];
+            $hash_id = $data['hash_id'];
+            $pos = strpos($data['slug'], $hash_id);
+
+            // Only add hash_id if it's not already in slug with proper separator (- or _)
+            if ($pos === false || $pos === 0) {
+                $slug_parts[] = $hash_id;
+            } elseif ($pos > 0) {
+                $sep = $data['slug'][$pos - 1];
+
+                if ($sep !== '-' && $sep !== '_') {
+                    $slug_parts[] = $hash_id;
+                }
+            }
         }
 
         $full_slug = implode('-', $slug_parts);
