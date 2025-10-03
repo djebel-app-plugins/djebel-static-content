@@ -134,61 +134,6 @@ class Djebel_Plugin_Static_Blog
 
         ob_start();
         ?>
-        <style>
-        .djebel-plugin-static-blog-post {
-            margin-bottom: 1.5rem;
-            padding: 1.5rem;
-        }
-
-        .djebel-plugin-static-blog-post-title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-        }
-
-        .djebel-plugin-static-blog-post-title a {
-            text-decoration: none;
-        }
-
-        .djebel-plugin-static-blog-post-meta {
-            font-size: 0.875rem;
-            margin-bottom: 1rem;
-        }
-
-        .djebel-plugin-static-blog-post-summary {
-            line-height: 1.6;
-            margin-bottom: 1rem;
-        }
-
-        .djebel-plugin-static-blog-post-tags {
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-        }
-
-        .djebel-plugin-static-blog-tag {
-            padding: 0.25rem 0.75rem;
-            font-size: 0.875rem;
-        }
-
-        .djebel-plugin-static-blog-pagination {
-            display: flex;
-            justify-content: center;
-            gap: 1rem;
-            margin-top: 2rem;
-            padding-top: 1.5rem;
-        }
-
-        .djebel-plugin-static-blog-pagination a {
-            padding: 0.5rem 1rem;
-            text-decoration: none;
-        }
-
-        .djebel-plugin-static-blog-pagination span {
-            padding: 0.5rem 1rem;
-        }
-        </style>
-
         <div class="djebel-plugin-static-blog-container">
             <?php if ($render_title || !empty($params['title'])): ?>
                 <h2 class="djebel-plugin-static-blog-title"><?php echo Djebel_App_HTML::encodeEntities($title); ?></h2>
