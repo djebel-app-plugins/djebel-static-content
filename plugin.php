@@ -109,6 +109,19 @@ class Djebel_Plugin_Static_Blog
 
     public function renderBlog($params = [])
     {
+        // Auto-detect if this is a single post request
+        $hash_id = $this->isBlogPostRequest($params);
+
+        if (!empty($hash_id)) {
+            // Inject hash_id into request for renderPost to use
+            $req_obj = Dj_App_Request::getInstance();
+            $req_obj->set('hash_id', $hash_id);
+
+            // Delegate to renderPost for single post rendering
+            return $this->renderPost($params);
+        }
+
+        // Render blog listing (existing code)
         $title = empty($params['title']) ? 'Blog Posts' : trim($params['title']);
         $render_title = empty($params['render_title']) ? 0 : 1;
         $blog_data = $this->getBlogData($params);
@@ -275,7 +288,10 @@ class Djebel_Plugin_Static_Blog
 
         $this->sort_by = Dj_App_Hooks::applyFilter('app.plugin.static_blog.sort_by', $this->sort_by);
 
-        usort($blog_data, [$this, 'sortPosts']);
+        // Allow customization of the sort callback
+        $sort_callback = Dj_App_Hooks::applyFilter('app.plugin.static_blog.sort_callback', [$this, 'sortPosts']);
+
+        usort($blog_data, $sort_callback);
 
         $blog_data = Dj_App_Hooks::applyFilter('app.plugin.static_blog.data', $blog_data);
 
@@ -526,7 +542,47 @@ class Djebel_Plugin_Static_Blog
         return '';
     }
 
-    private function sortPosts($a, $b)
+    /**
+     * Detects if current request is for a single blog post
+     * Fast detection: checks URL for blog prefix and extracts hash from last segment
+     * @param array $params Shortcode parameters
+     * @return string|false Hash ID if blog post request, false otherwise
+     */
+    public function isBlogPostRequest($params = [])
+    {
+        $options_obj = Dj_App_Options::getInstance();
+        $blog_prefix = $options_obj->get('plugins.djebel-static-blog.blog_prefix', '/blog');
+
+        $req_obj = Dj_App_Request::getInstance();
+        $req_url = $req_obj->getCleanRequestUrl();
+
+        // Quick check: does URL contain blog prefix anywhere?
+        if (strpos($req_url, $blog_prefix) === false) {
+            return false;
+        }
+
+        // Get the last 15 characters from URL for hash detection
+        // This is fast and works regardless of how many segments we have
+        $last_segment = substr($req_url, -15);
+
+        // Quick check: does it contain a dash? (hash separator)
+        if (strpos($last_segment, '-') === false) {
+            return false;
+        }
+
+        // Try to extract hash_id from the last segment
+        $hash_id = $this->parseHashId($last_segment);
+
+        return !empty($hash_id) ? $hash_id : false;
+    }
+
+    /**
+     * Sort posts by configured field
+     * @param array $a First post
+     * @param array $b Second post
+     * @return int Comparison result
+     */
+    public function sortPosts($a, $b)
     {
         $field = $this->sort_by;
         $val_a = false;
