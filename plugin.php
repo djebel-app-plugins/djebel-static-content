@@ -41,6 +41,9 @@ class Djebel_Plugin_Static_Blog
         $shortcode_obj = Dj_App_Shortcode::getInstance();
         $shortcode_obj->addShortcode('djebel_static_blog', [$this, 'renderBlog']);
         $shortcode_obj->addShortcode('djebel_static_blog_post', [$this, 'renderPost']);
+
+        // Hook into theme's page file resolution to redirect blog post URLs to blog template
+        Dj_App_Hooks::addFilter('app.themes.current_theme.page_content_file', [$this, 'resolvePageContentFile'], 10, 2);
     }
 
     public function getStatuses()
@@ -544,7 +547,8 @@ class Djebel_Plugin_Static_Blog
             return '';
         }
 
-        $str = basename($str, '.md');
+        $str = basename($str);
+        $str = str_replace(['.md', '.php'], '', $str);
         $str = substr($str, -15);
 
         if (!Dj_App_String_Util::isAlphaNumericExt($str)) {
@@ -592,6 +596,67 @@ class Djebel_Plugin_Static_Blog
         $hash_id = $this->parseHashId($last_segment);
 
         return !empty($hash_id) ? $hash_id : false;
+    }
+
+    /**
+     * Resolves page content file for blog posts
+     * Intercepts theme file resolution and redirects blog post URLs to blog template
+     * Example: /blog/getting-started-abc123def456 -> blog.php (if hash matches existing post)
+     * @param string $loop_file The file path being checked by theme
+     * @param array $ctx Context from theme (pages_dir, theme_dir, page, full_page)
+     * @return string Modified file path or original if not a blog post
+     */
+    public function resolvePageContentFile($loop_file, $ctx = [])
+    {
+        // Early exit: check if we have required data
+        if (empty($ctx['pages_dir']) || empty($loop_file)) {
+            return $loop_file;
+        }
+
+        $pages_dir = $ctx['pages_dir'];
+
+        // Only process if file doesn't exist
+        if (file_exists($loop_file)) {
+            return $loop_file;
+        }
+
+        // Quick check: does filename contain a dash? (fast string check)
+        if (strpos($loop_file, '-') === false) {
+            return $loop_file;
+        }
+
+        // Try to extract hash from filename (parseHashId handles .php/.md removal)
+        $hash_id = $this->parseHashId($loop_file);
+
+        if (empty($hash_id)) {
+            return $loop_file;
+        }
+
+        // Check if this hash matches an existing blog post
+        $blog_data = $this->getBlogData();
+
+        if (empty($blog_data[$hash_id])) {
+            return $loop_file;
+        }
+
+        $options_obj = Dj_App_Options::getInstance();
+        $blog_template = $options_obj->get('plugins.djebel-static-blog.blog_template', 'blog');
+
+        // Append .php extension if not present
+        $file_ext = pathinfo($blog_template, PATHINFO_EXTENSION);
+
+        if (empty($file_ext)) {
+            $blog_template .= '.php';
+        }
+
+        // Build path to blog template
+        $blog_template_file = $pages_dir . '/' . $blog_template;
+
+        // Inject hash_id into request so renderBlog/renderPost can use it
+        $req_obj = Dj_App_Request::getInstance();
+        $req_obj->set('hash_id', $hash_id);
+
+        return $blog_template_file;
     }
 
     /**
