@@ -68,26 +68,34 @@ class Djebel_Plugin_Static_Blog
 
         $post_rec = $blog_data[$hash_id];
 
+        $options_obj = Dj_App_Options::getInstance();
+        $show_date = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_date'));
+        $show_author = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_author'));
+        $show_category = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_category'));
+        $show_tags = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_tags'));
+
         ob_start();
         ?>
         <article class="djebel-plugin-static-blog-post-single">
             <h1 class="djebel-plugin-static-blog-post-single-title"><?php echo Djebel_App_HTML::encodeEntities($post_rec['title']); ?></h1>
 
-            <div class="djebel-plugin-static-blog-post-single-meta">
-                <?php if (!empty($post_rec['creation_date'])): ?>
-                    <span><?php echo Djebel_App_HTML::encodeEntities(date('F j, Y', strtotime($post_rec['creation_date']))); ?></span>
-                <?php endif; ?>
+            <?php if ($show_date || $show_author || $show_category): ?>
+                <div class="djebel-plugin-static-blog-post-single-meta">
+                    <?php if ($show_date && !empty($post_rec['creation_date'])): ?>
+                        <span><?php echo Djebel_App_HTML::encodeEntities(date('F j, Y', strtotime($post_rec['creation_date']))); ?></span>
+                    <?php endif; ?>
 
-                <?php if (!empty($post_rec['author'])): ?>
-                    <span> · by <?php echo Djebel_App_HTML::encodeEntities($post_rec['author']); ?></span>
-                <?php endif; ?>
+                    <?php if ($show_author && !empty($post_rec['author'])): ?>
+                        <span> · by <?php echo Djebel_App_HTML::encodeEntities($post_rec['author']); ?></span>
+                    <?php endif; ?>
 
-                <?php if (!empty($post_rec['category'])): ?>
-                    <span> · <?php echo Djebel_App_HTML::encodeEntities($post_rec['category']); ?></span>
-                <?php endif; ?>
-            </div>
+                    <?php if ($show_category && !empty($post_rec['category'])): ?>
+                        <span> · <?php echo Djebel_App_HTML::encodeEntities($post_rec['category']); ?></span>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
 
-            <?php if (!empty($post_rec['tags'])): ?>
+            <?php if ($show_tags && !empty($post_rec['tags'])): ?>
                 <div class="djebel-plugin-static-blog-post-single-tags">
                     <?php foreach ($post_rec['tags'] as $tag): ?>
                         <span class="djebel-plugin-static-blog-tag"><?php echo Djebel_App_HTML::encodeEntities($tag); ?></span>
@@ -152,6 +160,14 @@ class Djebel_Plugin_Static_Blog
                 <h2 class="djebel-plugin-static-blog-title"><?php echo Djebel_App_HTML::encodeEntities($title); ?></h2>
             <?php endif; ?>
 
+            <?php
+            $options_obj = Dj_App_Options::getInstance();
+            $show_date = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_date'));
+            $show_author = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_author'));
+            $show_category = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_category'));
+            $show_summary = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_summary', 1)); // default enabled
+            $show_tags = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_tags'));
+            ?>
             <?php foreach ($blog_data as $post_rec): ?>
                 <article class="djebel-plugin-static-blog-post">
                     <h3 class="djebel-plugin-static-blog-post-title">
@@ -160,27 +176,29 @@ class Djebel_Plugin_Static_Blog
                         </a>
                     </h3>
 
-                    <div class="djebel-plugin-static-blog-post-meta">
-                        <?php if (!empty($post_rec['creation_date'])): ?>
-                            <span><?php echo Djebel_App_HTML::encodeEntities(date('F j, Y', strtotime($post_rec['creation_date']))); ?></span>
-                        <?php endif; ?>
+                    <?php if ($show_date || $show_author || $show_category): ?>
+                        <div class="djebel-plugin-static-blog-post-meta">
+                            <?php if ($show_date && !empty($post_rec['creation_date'])): ?>
+                                <span><?php echo Djebel_App_HTML::encodeEntities(date('F j, Y', strtotime($post_rec['creation_date']))); ?></span>
+                            <?php endif; ?>
 
-                        <?php if (!empty($post_rec['author'])): ?>
-                            <span> · by <?php echo Djebel_App_HTML::encodeEntities($post_rec['author']); ?></span>
-                        <?php endif; ?>
+                            <?php if ($show_author && !empty($post_rec['author'])): ?>
+                                <span> · by <?php echo Djebel_App_HTML::encodeEntities($post_rec['author']); ?></span>
+                            <?php endif; ?>
 
-                        <?php if (!empty($post_rec['category'])): ?>
-                            <span> · <?php echo Djebel_App_HTML::encodeEntities($post_rec['category']); ?></span>
-                        <?php endif; ?>
-                    </div>
+                            <?php if ($show_category && !empty($post_rec['category'])): ?>
+                                <span> · <?php echo Djebel_App_HTML::encodeEntities($post_rec['category']); ?></span>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
 
-                    <?php if (!empty($post_rec['summary'])): ?>
+                    <?php if ($show_summary && !empty($post_rec['summary'])): ?>
                         <div class="djebel-plugin-static-blog-post-summary">
                             <?php echo Djebel_App_HTML::encodeEntities($post_rec['summary']); ?>
                         </div>
                     <?php endif; ?>
 
-                    <?php if (!empty($post_rec['tags'])): ?>
+                    <?php if ($show_tags && !empty($post_rec['tags'])): ?>
                         <div class="djebel-plugin-static-blog-post-tags">
                             <?php foreach ($post_rec['tags'] as $tag): ?>
                                 <span class="djebel-plugin-static-blog-tag"><?php echo Djebel_App_HTML::encodeEntities($tag); ?></span>
