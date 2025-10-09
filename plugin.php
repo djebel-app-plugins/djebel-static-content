@@ -312,7 +312,8 @@ class Djebel_Plugin_Static_Blog
         // Allow customization of the sort callback
         $sort_callback = Dj_App_Hooks::applyFilter('app.plugin.static_blog.sort_callback', [$this, 'sortPosts']);
 
-        usort($blog_data, $sort_callback);
+        // Use uasort to maintain hash_id keys for fast lookups
+        uasort($blog_data, $sort_callback);
 
         $blog_data = Dj_App_Hooks::applyFilter('app.plugin.static_blog.data', $blog_data);
 
