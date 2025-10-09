@@ -33,6 +33,7 @@ class Djebel_Plugin_Static_Blog
     private $cache_dir;
     private $sort_by = 'file';
     private $statuses = [self::STATUS_DRAFT, self::STATUS_PUBLISHED];
+    private $request_param_key = 'djebel_plugin_static_blog_data';
 
     public function init()
     {
@@ -57,7 +58,8 @@ class Djebel_Plugin_Static_Blog
     public function renderPost($params = [])
     {
         $req_obj = Dj_App_Request::getInstance();
-        $hash_id = $req_obj->get('hash_id');
+        $plugin_params = $req_obj->get($this->request_param_key, []);
+        $hash_id = !empty($plugin_params['hash_id']) ? $plugin_params['hash_id'] : '';
 
         if (empty($hash_id)) {
             return "<!--\nNo post hash_id provided\n-->";
@@ -120,13 +122,16 @@ class Djebel_Plugin_Static_Blog
 
     public function renderBlog($params = [])
     {
+        $req_obj = Dj_App_Request::getInstance();
+        $plugin_params = $req_obj->get($this->request_param_key, []);
+
         // Auto-detect if this is a single post request
         $hash_id = $this->isBlogPostRequest($params);
 
         if (!empty($hash_id)) {
-            // Inject hash_id into request for renderPost to use
-            $req_obj = Dj_App_Request::getInstance();
-            $req_obj->set('hash_id', $hash_id);
+            // Inject hash_id into plugin params array
+            $plugin_params['hash_id'] = $hash_id;
+            $req_obj->set($this->request_param_key, $plugin_params);
 
             // Delegate to renderPost for single post rendering
             return $this->renderPost($params);
@@ -140,9 +145,7 @@ class Djebel_Plugin_Static_Blog
         if (empty($blog_data)) {
             return "<!--\nNo blog posts available\n-->";
         }
-
-        $req_obj = Dj_App_Request::getInstance();
-        $current_page = (int) $req_obj->get('djebel_plugin_static_blog_page');
+        $current_page = !empty($plugin_params['page']) ? (int) $plugin_params['page'] : 1;
         $current_page = max(1, $current_page);
 
         $per_page = empty($params['per_page']) ? self::DEFAULT_RECORDS_PER_PAGE : (int) $params['per_page'];
@@ -214,22 +217,24 @@ class Djebel_Plugin_Static_Blog
             <?php if ($total_pages > 1): ?>
                 <?php
                 $current_url = $req_obj->getRequestUri();
-                $prev_url = Dj_App_Request::addQueryParam('djebel_plugin_static_blog_page', $current_page - 1, $current_url);
-                $next_url = Dj_App_Request::addQueryParam('djebel_plugin_static_blog_page', $current_page + 1, $current_url);
+                $prev_url = Dj_App_Request::addQueryParam($this->request_param_key . '[page]', $current_page - 1, $current_url);
+                $next_url = Dj_App_Request::addQueryParam($this->request_param_key . '[page]', $current_page + 1, $current_url);
                 ?>
                 <div class="djebel-plugin-static-blog-pagination">
                     <?php if ($current_page > 1): ?>
-                        <a href="<?php echo Djebel_App_HTML::encodeEntities($prev_url); ?>">← Previous</a>
-                    <?php else: ?>
-                        <span>← Previous</span>
+                        <span class="djebel-plugin-static-blog-pagination-prev">
+                            <a href="<?php echo Djebel_App_HTML::encodeEntities($prev_url); ?>">← Previous</a>
+                        </span>
                     <?php endif; ?>
 
-                    <span>Page <?php echo $current_page; ?> of <?php echo $total_pages; ?></span>
+                    <?php if ($current_page && $total_pages): ?>
+                        <span class="djebel-plugin-static-blog-pagination-info">Page <?php echo $current_page; ?> of <?php echo $total_pages; ?></span>
+                    <?php endif; ?>
 
                     <?php if ($current_page < $total_pages): ?>
-                        <a href="<?php echo Djebel_App_HTML::encodeEntities($next_url); ?>">Next →</a>
-                    <?php else: ?>
-                        <span>Next →</span>
+                        <span class="djebel-plugin-static-blog-pagination-next">
+                            <a href="<?php echo Djebel_App_HTML::encodeEntities($next_url); ?>">Next →</a>
+                        </span>
                     <?php endif; ?>
                 </div>
             <?php endif; ?>
@@ -653,9 +658,11 @@ class Djebel_Plugin_Static_Blog
         // Build path to blog template
         $blog_template_file = $pages_dir . '/' . $blog_template;
 
-        // Inject hash_id into request so renderBlog/renderPost can use it
+        // Inject hash_id into plugin params array
         $req_obj = Dj_App_Request::getInstance();
-        $req_obj->set('hash_id', $hash_id);
+        $plugin_params = $req_obj->get($this->request_param_key, []);
+        $plugin_params['hash_id'] = $hash_id;
+        $req_obj->set($this->request_param_key, $plugin_params);
 
         return $blog_template_file;
     }
