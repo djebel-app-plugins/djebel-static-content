@@ -432,7 +432,12 @@ class Djebel_Plugin_Static_Blog
             $html_content = $file_content;
         }
 
-        $hash_id = !empty($meta['id']) ? $meta['id'] : '';
+        // Check for hash_id first, then fallback to id
+        $hash_id = !empty($meta['hash_id']) ? $meta['hash_id'] : '';
+
+        if (empty($hash_id)) {
+            $hash_id = !empty($meta['id']) ? $meta['id'] : '';
+        }
 
         if (empty($hash_id)) {
             $hash_id = $this->parseHashId($file);
