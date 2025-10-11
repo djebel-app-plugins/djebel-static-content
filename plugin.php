@@ -74,10 +74,10 @@ class Djebel_Plugin_Static_Blog
         $post_rec = $blog_data[$hash_id];
 
         $options_obj = Dj_App_Options::getInstance();
-        $show_date = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_date'));
-        $show_author = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_author'));
-        $show_category = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_category'));
-        $show_tags = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_tags'));
+        $show_date = $options_obj->isEnabled('plugins.djebel-static-blog.show_date');
+        $show_author = $options_obj->isEnabled('plugins.djebel-static-blog.show_author');
+        $show_category = $options_obj->isEnabled('plugins.djebel-static-blog.show_category');
+        $show_tags = $options_obj->isEnabled('plugins.djebel-static-blog.show_tags');
 
         ob_start();
         ?>
@@ -168,11 +168,11 @@ class Djebel_Plugin_Static_Blog
 
             <?php
             $options_obj = Dj_App_Options::getInstance();
-            $show_date = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_date'));
-            $show_author = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_author'));
-            $show_category = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_category'));
-            $show_summary = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_summary', 1)); // default enabled
-            $show_tags = Dj_App_Util::isEnabled($options_obj->get('plugins.djebel-static-blog.show_tags'));
+            $show_date = $options_obj->isEnabled('plugins.djebel-static-blog.show_date');
+            $show_author = $options_obj->isEnabled('plugins.djebel-static-blog.show_author');
+            $show_category = $options_obj->isEnabled('plugins.djebel-static-blog.show_category');
+            $show_summary = $options_obj->isEnabled('plugins.djebel-static-blog.show_summary', 1); // default enabled
+            $show_tags = $options_obj->isEnabled('plugins.djebel-static-blog.show_tags');
             ?>
             <?php foreach ($blog_data as $post_rec): ?>
                 <article class="djebel-plugin-static-blog-post">
@@ -253,9 +253,7 @@ class Djebel_Plugin_Static_Blog
         $cache_params = ['plugin' => $this->plugin_id, 'ttl' => 8 * 60 * 60];
 
         $options_obj = Dj_App_Options::getInstance();
-
-        $cache_blog = $options_obj->get('plugins.djebel-static-blog.cache');
-        $cache_blog = !Dj_App_Util::isDisabled($cache_blog);
+        $cache_blog = !$options_obj->isDisabled('plugins.djebel-static-blog.cache');
 
         $cached_data = $cache_blog ? Dj_App_Cache::get($cache_key, $cache_params) : false;
 
