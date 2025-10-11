@@ -43,8 +43,8 @@ class Djebel_Plugin_Static_Blog
         $shortcode_obj->addShortcode('djebel_static_blog', [$this, 'renderBlog']);
         $shortcode_obj->addShortcode('djebel_static_blog_post', [$this, 'renderPost']);
 
-        // Hook into theme's page file resolution to redirect blog post URLs to blog template
-        Dj_App_Hooks::addFilter('app.themes.current_theme.page_content_file', [$this, 'resolvePageContentFile'], 10, 2);
+        // Hook into theme's page file candidates to add blog post template options
+        Dj_App_Hooks::addFilter('app.themes.current_theme_page_file_candidates', [$this, 'addPageFileCandidates'], 10, 2);
     }
 
     public function getStatuses()
@@ -544,6 +544,8 @@ class Djebel_Plugin_Static_Blog
     /**
      * Parse hash ID from string (filename or URL)
      * Extracts 10-12 character alphanumeric hash from end of string
+     * Get the last 15 characters from URL for hash detection
+     * This is fast and works regardless of how many segments we have
      * @param string $str
      * @return string
      */
@@ -553,9 +555,16 @@ class Djebel_Plugin_Static_Blog
             return '';
         }
 
+        // This is fast and works regardless of how many segments we have
         $str = basename($str);
         $str = str_replace(['.md', '.php'], '', $str);
-        $str = substr($str, -15);
+        // Get the last 15 characters for hash detection
+        $str = substr($str, -18);
+
+        // Quick check: must contain a dash (hash separator)
+        if (strpos($str, '-') === false) {
+            return '';
+        }
 
         if (!Dj_App_String_Util::isAlphaNumericExt($str)) {
             return '';
@@ -563,7 +572,7 @@ class Djebel_Plugin_Static_Blog
 
         $str = strtolower($str);
 
-        if (preg_match('#[\-\_]([a-z\d]{10,12})$#i', $str, $matches)) {
+        if (preg_match('#[\-\_]([a-z\d]{10,15})$#i', $str, $matches)) {
             return $matches[1];
         }
 
@@ -589,62 +598,64 @@ class Djebel_Plugin_Static_Blog
             return false;
         }
 
-        // Get the last 15 characters from URL for hash detection
-        // This is fast and works regardless of how many segments we have
-        $last_segment = substr($req_url, -15);
-
-        // Quick check: does it contain a dash? (hash separator)
-        if (strpos($last_segment, '-') === false) {
-            return false;
-        }
-
-        // Try to extract hash_id from the last segment
-        $hash_id = $this->parseHashId($last_segment);
+        // Try to extract hash_id from URL (parseHashId handles substring and validation)
+        $hash_id = $this->parseHashId($req_url);
 
         return !empty($hash_id) ? $hash_id : false;
     }
 
     /**
-     * Resolves page content file for blog posts
-     * Intercepts theme file resolution and redirects blog post URLs to blog template
-     * Example: /blog/getting-started-abc123def456 -> blog.php (if hash matches existing post)
-     * @param string $loop_file The file path being checked by theme
+     * Adds page file candidates for blog posts
+     * Provides multiple fallback options for blog post templates
+     * Example: /blog/getting-started-abc123def456 adds candidates like:
+     *   1. /blog.php (parent directory as PHP file - handles multi-lingual setups)
+     *   2. /blog/blog.php (configured blog template in subdirectory)
+     * @param array $page_file_candidates Initial candidate files from theme
      * @param array $ctx Context from theme (pages_dir, theme_dir, page, full_page)
-     * @return string Modified file path or original if not a blog post
+     * @return array Modified candidates array with blog templates prepended
      */
-    public function resolvePageContentFile($loop_file, $ctx = [])
+    public function addPageFileCandidates($page_file_candidates, $ctx = [])
     {
         // Early exit: check if we have required data
-        if (empty($ctx['pages_dir']) || empty($loop_file)) {
-            return $loop_file;
+        if (empty($page_file_candidates)) {
+            return $page_file_candidates;
         }
 
-        $pages_dir = $ctx['pages_dir'];
+        $first_candidate = $page_file_candidates[0];
 
-        // Only process if file doesn't exist
-        if (file_exists($loop_file)) {
-            return $loop_file;
-        }
-
-        // Quick check: does filename contain a dash? (fast string check)
-        if (strpos($loop_file, '-') === false) {
-            return $loop_file;
-        }
-
-        // Try to extract hash from filename (parseHashId handles .php/.md removal)
-        $hash_id = $this->parseHashId($loop_file);
+        // Try to extract hash from filename (parseHashId handles validation)
+        $hash_id = $this->parseHashId($first_candidate);
 
         if (empty($hash_id)) {
-            return $loop_file;
+            return $page_file_candidates;
         }
 
         // Check if this hash matches an existing blog post
         $blog_data = $this->getBlogData();
 
         if (empty($blog_data[$hash_id])) {
-            return $loop_file;
+            return $page_file_candidates;
         }
 
+        // Inject hash_id into plugin params for renderPost method
+        $req_obj = Dj_App_Request::getInstance();
+        $plugin_params = $req_obj->get($this->request_param_key, []);
+        $plugin_params['hash_id'] = $hash_id;
+        $req_obj->set($this->request_param_key, $plugin_params);
+
+        // Build candidate files for blog post template
+        $new_candidates = [];
+
+        // Candidate 1: Parent directory as PHP file (handles multi-lingual setups)
+        // The way request is parsed, the theme tries to map it to local file.
+        // Normally it's ok to use pages_dir ... but if we have multi-lingual setup
+        // we need to go 1 level up.
+        $parent_dir_file = dirname($first_candidate);
+        $parent_dir_file = Dj_App_Util::removeSlash($parent_dir_file);
+        $parent_dir_file .= '.php';
+        $new_candidates[] = $parent_dir_file;
+
+        // Candidate 2: Configured blog template in subdirectory
         $options_obj = Dj_App_Options::getInstance();
         $blog_template = $options_obj->get('plugins.djebel-static-blog.blog_template', 'blog');
 
@@ -655,16 +666,15 @@ class Djebel_Plugin_Static_Blog
             $blog_template .= '.php';
         }
 
-        // Build path to blog template
-        $blog_template_file = $pages_dir . '/' . $blog_template;
+        // Extract the subdirectory from first candidate (e.g., /blog from /blog/post-name.php)
+        $subdir = dirname($first_candidate);
+        $blog_template_file = $subdir . '/' . $blog_template;
+        $new_candidates[] = $blog_template_file;
 
-        // Inject hash_id into plugin params array
-        $req_obj = Dj_App_Request::getInstance();
-        $plugin_params = $req_obj->get($this->request_param_key, []);
-        $plugin_params['hash_id'] = $hash_id;
-        $req_obj->set($this->request_param_key, $plugin_params);
+        // Prepend new candidates to existing ones (check blog templates first)
+        $page_file_candidates = array_merge($new_candidates, $page_file_candidates);
 
-        return $blog_template_file;
+        return $page_file_candidates;
     }
 
     /**
