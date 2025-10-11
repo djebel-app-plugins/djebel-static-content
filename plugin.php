@@ -414,9 +414,9 @@ class Djebel_Plugin_Static_Blog
         }
 
         if (!empty($meta['publish_date'])) {
-            $publish_timestamp = strtotime($meta['publish_date']);
+            $publish_timestamp = Dj_App_Util::strtotime($meta['publish_date']);
 
-            if ($publish_timestamp && $publish_timestamp > time()) {
+            if ($publish_timestamp && $publish_timestamp > Dj_App_Util::time()) {
                 return [];
             }
         }
