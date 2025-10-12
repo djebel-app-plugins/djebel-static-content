@@ -134,8 +134,8 @@ class Djebel_Plugin_Static_Content
         $req_obj = Dj_App_Request::getInstance();
         $plugin_params = $req_obj->get($this->request_param_key, []);
 
-        // Auto-detect if this is a single post request
-        $hash_id = $this->isBlogPostRequest($params);
+        // Auto-detect if this is a single post request by parsing hash_id from URL
+        $hash_id = $this->parseHashId();
 
         if (!empty($hash_id)) {
             // Inject hash_id into plugin params array
@@ -568,12 +568,17 @@ class Djebel_Plugin_Static_Content
      * Extracts 10-12 character alphanumeric hash from end of string
      * Get the last 15 characters from URL for hash detection
      * This is fast and works regardless of how many segments we have
-     * @param string $str
+     * @param string $str String to parse, defaults to current request URL if empty
      * @return string
      */
-    public function parseHashId($str)
+    public function parseHashId($str = '')
     {
         if (empty($str)) {
+            $req_obj = Dj_App_Request::getInstance();
+            $str = $req_obj->getCleanRequestUrl();
+        }
+
+        if (empty($str) || $str == '/') {
             return '';
         }
 
@@ -599,31 +604,6 @@ class Djebel_Plugin_Static_Content
         }
 
         return '';
-    }
-
-    /**
-     * Detects if current request is for a single blog post
-     * Fast detection: checks URL for blog prefix and extracts hash from last segment
-     * @param array $params Shortcode parameters
-     * @return string|false Hash ID if blog post request, false otherwise
-     */
-    public function isBlogPostRequest($params = [])
-    {
-        $options_obj = Dj_App_Options::getInstance();
-        $blog_prefix = $options_obj->get('plugins.djebel-static-content.blog_prefix', '/blog');
-
-        $req_obj = Dj_App_Request::getInstance();
-        $req_url = $req_obj->getCleanRequestUrl();
-
-        // Quick check: does URL contain blog prefix anywhere?
-        if (strpos($req_url, $blog_prefix) === false) {
-            return false;
-        }
-
-        // Try to extract hash_id from URL (parseHashId handles substring and validation)
-        $hash_id = $this->parseHashId($req_url);
-
-        return !empty($hash_id) ? $hash_id : false;
     }
 
     /**
