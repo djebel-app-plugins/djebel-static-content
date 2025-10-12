@@ -45,7 +45,7 @@ class Djebel_Plugin_Static_Content
         $shortcode_obj->addShortcode('djebel_static_content', [$this, 'renderContent']);
         $shortcode_obj->addShortcode('djebel_static_content_post', [$this, 'renderSingleContent']);
 
-        // Hook into theme's page file candidates to add blog post template options
+        // Hook into theme's page file candidates to add content template options
         Dj_App_Hooks::addFilter('app.themes.current_theme_page_file_candidates', [$this, 'addPageFileCandidates'], 10, 2);
     }
 
@@ -67,13 +67,13 @@ class Djebel_Plugin_Static_Content
             return "<!--\nNo post hash_id provided\n-->";
         }
 
-        $blog_data = $this->getBlogData($params);
+        $content_data = $this->getContentData($params);
 
-        if (empty($blog_data[$hash_id])) {
+        if (empty($content_data[$hash_id])) {
             return "<!--\nPost not found\n-->";
         }
 
-        $post_rec = $blog_data[$hash_id];
+        $post_rec = $content_data[$hash_id];
 
         // Reload with full content for single post view
         $post_rec = $this->loadPostFromMarkdown(['file' => $post_rec['file'], 'full' => 1]);
@@ -124,7 +124,7 @@ class Djebel_Plugin_Static_Content
         <?php
         $html = ob_get_clean();
         $ctx = ['post_rec' => $post_rec];
-        $html = Dj_App_Hooks::applyFilter('app.plugin.static_content.render_blog_post', $html, $ctx);
+        $html = Dj_App_Hooks::applyFilter('app.plugin.static_content.render_single_content', $html, $ctx);
 
         return $html;
     }
@@ -140,32 +140,38 @@ class Djebel_Plugin_Static_Content
         if (!empty($hash_id)) {
             // Inject hash_id into plugin params array
             $plugin_params['hash_id'] = $hash_id;
+
+            // Pass template file from shortcode framework (auto-detected or explicit)
+            if (!empty($params['template_file'])) {
+                $plugin_params['template_file'] = $params['template_file'];
+            }
+
             $req_obj->set($this->request_param_key, $plugin_params);
 
             // Delegate to renderSingleContent for single post rendering
             return $this->renderSingleContent($params);
         }
 
-        // Render blog listing (existing code)
+        // Render content listing
         $title = empty($params['title']) ? 'Blog Posts' : trim($params['title']);
         $render_title = empty($params['render_title']) ? 0 : 1;
-        $blog_data = $this->getBlogData($params);
+        $content_data = $this->getContentData($params);
 
-        if (empty($blog_data)) {
-            return "<!--\nNo blog posts available\n-->";
+        if (empty($content_data)) {
+            return "<!--\nNo content available\n-->";
         }
         $current_page = !empty($plugin_params['page']) ? (int) $plugin_params['page'] : 1;
         $current_page = max(1, $current_page);
 
         $per_page = empty($params['per_page']) ? self::DEFAULT_RECORDS_PER_PAGE : (int) $params['per_page'];
-        $total_posts = count($blog_data);
+        $total_posts = count($content_data);
         $total_pages = ceil($total_posts / $per_page);
         $offset = ($current_page - 1) * $per_page;
 
-        $blog_data = array_slice($blog_data, $offset, $per_page, true);
+        $content_data = array_slice($content_data, $offset, $per_page, true);
 
-        if (empty($blog_data)) {
-            return "<!--\nNo blog posts available on this page\n-->";
+        if (empty($content_data)) {
+            return "<!--\nNo content available on this page\n-->";
         }
 
         ob_start();
@@ -183,7 +189,7 @@ class Djebel_Plugin_Static_Content
             $show_summary = $options_obj->isEnabled('plugins.djebel-static-content.show_summary', 1); // default enabled
             $show_tags = $options_obj->isEnabled('plugins.djebel-static-content.show_tags');
             ?>
-            <?php foreach ($blog_data as $post_rec): ?>
+            <?php foreach ($content_data as $post_rec): ?>
                 <article class="djebel-plugin-static-content-post">
                     <h3 class="djebel-plugin-static-content-post-title">
                         <a href="<?php echo Djebel_App_HTML::encodeEntities($post_rec['url']); ?>">
@@ -250,46 +256,78 @@ class Djebel_Plugin_Static_Content
         </div>
         <?php
         $html = ob_get_clean();
-        $ctx = ['blog_data' => $blog_data, 'params' => $params];
-        $html = Dj_App_Hooks::applyFilter('app.plugin.static_content.render_blog', $html, $ctx);
+        $ctx = ['content_data' => $content_data, 'params' => $params];
+        $html = Dj_App_Hooks::applyFilter('app.plugin.static_content.render_content', $html, $ctx);
 
         return $html;
     }
 
-    public function getBlogData($params = [])
+    public function getContentData($params = [])
     {
-        $cache_key = $this->plugin_id;
+        // Support both content_id and section_id (section_id is an alias)
+        if (!empty($params['content_id'])) {
+            $content_id = $params['content_id'];
+        } elseif (!empty($params['section_id'])) {
+            $content_id = $params['section_id'];
+        } else {
+            $content_id = 'default';
+        }
+        $content_id = Dj_App_String_Util::formatSlug($content_id); // Sanitize and format
+        $cache_key = $this->plugin_id . '_' . $content_id;
         $cache_params = ['plugin' => $this->plugin_id, 'ttl' => 8 * 60 * 60];
 
         $options_obj = Dj_App_Options::getInstance();
-        $cache_blog = !$options_obj->isDisabled('plugins.djebel-static-content.cache');
 
-        $cached_data = $cache_blog ? Dj_App_Cache::get($cache_key, $cache_params) : false;
+        // Check per-collection cache setting, fall back to global setting
+        $cache_content = !$options_obj->isDisabled("plugins.djebel-static-content.{$content_id}.cache")
+                 || !$options_obj->isDisabled('plugins.djebel-static-content.cache');
+
+        $cached_data = $cache_content ? Dj_App_Cache::get($cache_key, $cache_params) : false;
 
         if (!empty($cached_data)) {
             return $cached_data;
         }
 
-        $blog_data = $this->generateBlogData($params);
+        $content_data = $this->generateContentData($params);
 
-        Dj_App_Cache::set($cache_key, $blog_data, $cache_params);
+        if ($cache_content && !empty($content_data)) {
+            Dj_App_Cache::set($cache_key, $content_data, $cache_params);
+        }
 
-        return $blog_data;
+        return $content_data;
     }
 
-    public function clearCache()
+    public function clearCache($content_id = null)
     {
-        $cache_key = $this->plugin_id;
         $cache_params = ['plugin' => $this->plugin_id];
 
-        $result = Dj_App_Cache::remove($cache_key, $cache_params);
+        if ($content_id) {
+            // Clear specific collection
+            $content_id = Dj_App_String_Util::formatSlug($content_id);
+            $cache_key = $this->plugin_id . '_' . $content_id;
+            $result = Dj_App_Cache::remove($cache_key, $cache_params);
+        } else {
+            // Clear all cache files for this plugin
+            $result = Dj_App_Cache::removeAll($cache_params);
+        }
 
         return $result;
     }
 
-    private function generateBlogData($params = [])
+    private function generateContentData($params = [])
     {
-        $blog_data = [];
+        $content_data = [];
+
+        // Support both content_id and section_id (section_id is an alias)
+        if (!empty($params['content_id'])) {
+            $content_id = $params['content_id'];
+        } elseif (!empty($params['section_id'])) {
+            $content_id = $params['section_id'];
+        } else {
+            $content_id = 'default';
+        }
+
+        $content_id = Dj_App_String_Util::formatSlug($content_id); // Sanitize and format
         $scan_dirs = $this->getScanDirectories($params);
 
         foreach ($scan_dirs as $scan_dir) {
@@ -300,32 +338,46 @@ class Djebel_Plugin_Static_Content
             $md_files = $this->scanMarkdownFiles($scan_dir);
 
             foreach ($md_files as $file) {
-                $post_rec = $this->loadPostFromMarkdown(['file' => $file]);
+                $content_rec = $this->loadPostFromMarkdown(['file' => $file]);
 
-                if (empty($post_rec)) {
+                if (empty($content_rec)) {
                     continue;
                 }
 
-                $hash_id = $post_rec['hash_id'];
-                $post_rec['url'] = $this->generatePostUrl(['slug' => $post_rec['slug'], 'hash_id' => $hash_id]);
-                $blog_data[$hash_id] = $post_rec;
+                $hash_id = $content_rec['hash_id'];
+                $content_rec['url'] = $this->generatePostUrl(['slug' => $content_rec['slug'], 'hash_id' => $hash_id]);
+                $content_rec['content_id'] = $content_id; // Store content_id in record
+                $content_data[$hash_id] = $content_rec;
             }
         }
 
+        if (empty($content_data)) {
+            return $content_data;
+        }
+
         $options_obj = Dj_App_Options::getInstance();
-        $sort_by = $options_obj->get('plugins.djebel-static-content.sort_by');
-        $sort_by = Dj_App_Hooks::applyFilter('app.plugin.static_content.sort_by', $sort_by);
+
+        // Check per-collection sort setting, fall back to global
+        $config_key = "plugins.djebel-static-content.{$content_id}.sort_by";
+        $sort_by = $options_obj->get($config_key);
+
+        if ($sort_by === null) {
+            $sort_by = $options_obj->get('plugins.djebel-static-content.sort_by');
+        }
+
+        $ctx = ['content_id' => $content_id, 'params' => $params];
+        $sort_by = Dj_App_Hooks::applyFilter('app.plugin.static_content.sort_by', $sort_by, $ctx);
         $this->sort_by = $sort_by;
 
         // Allow customization of the sort callback
-        $sort_callback = Dj_App_Hooks::applyFilter('app.plugin.static_content.sort_callback', [$this, 'sortPosts']);
+        $sort_callback = Dj_App_Hooks::applyFilter('app.plugin.static_content.sort_callback', [$this, 'sortPosts'], $ctx);
 
         // Use uasort to maintain hash_id keys for fast lookups
-        uasort($blog_data, $sort_callback);
+        uasort($content_data, $sort_callback);
 
-        $blog_data = Dj_App_Hooks::applyFilter('app.plugin.static_content.data', $blog_data);
+        $content_data = Dj_App_Hooks::applyFilter('app.plugin.static_content.data', $content_data, $ctx);
 
-        return $blog_data;
+        return $content_data;
     }
 
     private function getScanDirectories($params = [])
@@ -397,7 +449,43 @@ class Djebel_Plugin_Static_Content
 
     private function getDataDirectory($params = [])
     {
-        $data_dir = Dj_App_Util::getCorePrivateDataDir(['plugin' => $this->plugin_id]) . '/content';
+        // Support both content_id and section_id (section_id is an alias)
+        if (!empty($params['content_id'])) {
+            $content_id = $params['content_id'];
+        } elseif (!empty($params['section_id'])) {
+            $content_id = $params['section_id'];
+        } else {
+            $content_id = 'default';
+        }
+        $content_id = Dj_App_String_Util::formatSlug($content_id); // Sanitize and format
+
+        // Default to public directory
+        $is_public = true;
+
+        // Check if explicitly set to private
+        if (isset($params['public']) && empty($params['public'])) {
+            $is_public = false;
+        }
+
+        // Allow per-collection config override
+        $options_obj = Dj_App_Options::getInstance();
+        $config_key = "plugins.djebel-static-content.{$content_id}.public";
+        $config_public = $options_obj->isEnabled($config_key);
+
+        if ($config_public) {
+            $is_public = (bool) $config_public;
+        }
+
+        if ($is_public) {
+            // Public: dj-content/data/plugins/{plugin_id}/{content_id}/
+            $base_dir = Dj_App_Util::getContentDataDir(['plugin' => $this->plugin_id]);
+            $data_dir = $base_dir . '/' . $content_id;
+        } else {
+            // Private: .ht_djebel/data/plugins/{plugin_id}/{content_id}/
+            $base_dir = Dj_App_Util::getCorePrivateDataDir(['plugin' => $this->plugin_id]);
+            $data_dir = $base_dir . '/' . $content_id;
+        }
+
         return $data_dir;
     }
 
@@ -620,14 +708,15 @@ class Djebel_Plugin_Static_Content
     }
 
     /**
-     * Adds page file candidates for blog posts
-     * Provides multiple fallback options for blog post templates
-     * Example: /blog/getting-started-abc123def456 adds candidates like:
-     *   1. /blog.php (parent directory as PHP file - handles multi-lingual setups)
-     *   2. /blog/blog.php (configured blog template in subdirectory)
+     * Adds page file candidates for content posts
+     * Provides multiple fallback options for content post templates
+     * Example: /blog/getting-started-abc123def456 or /docs/latest/intro-abc123def456
+     * Adds candidates like:
+     *   1. /blog.php or /docs/latest.php (parent directory as PHP file - handles multi-lingual setups)
+     *   2. /blog/blog.php or /docs/latest/latest.php (configured template in subdirectory)
      * @param array $page_file_candidates Initial candidate files from theme
      * @param array $ctx Context from theme (pages_dir, theme_dir, page, full_page)
-     * @return array Modified candidates array with blog templates prepended
+     * @return array Modified candidates array with content templates prepended
      */
     public function addPageFileCandidates($page_file_candidates, $ctx = [])
     {
@@ -636,19 +725,12 @@ class Djebel_Plugin_Static_Content
             return $page_file_candidates;
         }
 
-        $first_candidate = $page_file_candidates[0];
+        $first_candidate = reset($page_file_candidates);
 
         // Try to extract hash from filename (parseHashId handles validation)
         $hash_id = $this->parseHashId($first_candidate);
 
         if (empty($hash_id)) {
-            return $page_file_candidates;
-        }
-
-        // Check if this hash matches an existing blog post
-        $blog_data = $this->getBlogData();
-
-        if (empty($blog_data[$hash_id])) {
             return $page_file_candidates;
         }
 
@@ -658,7 +740,6 @@ class Djebel_Plugin_Static_Content
         $plugin_params['hash_id'] = $hash_id;
         $req_obj->set($this->request_param_key, $plugin_params);
 
-        // Build candidate files for blog post template
         $new_candidates = [];
 
         // Candidate 1: Parent directory as PHP file (handles multi-lingual setups)
@@ -667,26 +748,19 @@ class Djebel_Plugin_Static_Content
         // we need to go 1 level up.
         $parent_dir_file = dirname($first_candidate);
         $parent_dir_file = Dj_App_Util::removeSlash($parent_dir_file);
-        $parent_dir_file .= '.php';
-        $new_candidates[] = $parent_dir_file;
 
-        // Candidate 2: Configured blog template in subdirectory
-        $options_obj = Dj_App_Options::getInstance();
-        $blog_template = $options_obj->get('plugins.djebel-static-content.blog_template', 'blog');
+        $new_candidate = $parent_dir_file . '.php';
+        $new_candidates[] = $new_candidate;
 
-        // Append .php extension if not present
-        $file_ext = pathinfo($blog_template, PATHINFO_EXTENSION);
-
-        if (empty($file_ext)) {
-            $blog_template .= '.php';
+        // The template_file is auto-detected by the shortcode system via backtrace
+        // or explicitly provided via template_file parameter
+        if (!empty($plugin_params['template_file'])) {
+            $content_template_file = $plugin_params['template_file'];
+            $new_candidate = $parent_dir_file . $content_template_file;
+            $new_candidates[] = $new_candidate;
         }
 
-        // Extract the subdirectory from first candidate (e.g., /blog from /blog/post-name.php)
-        $subdir = dirname($first_candidate);
-        $blog_template_file = $subdir . '/' . $blog_template;
-        $new_candidates[] = $blog_template_file;
-
-        // Prepend new candidates to existing ones (check blog templates first)
+        // Prepend new candidates to existing ones (check content templates first)
         $page_file_candidates = array_merge($new_candidates, $page_file_candidates);
 
         return $page_file_candidates;
