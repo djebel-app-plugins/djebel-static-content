@@ -577,7 +577,9 @@ class Djebel_Plugin_Static_Content
         }
 
         if (is_string($meta['tags'])) {
-            $meta['tags'] = (array) $meta['tags'];
+            $meta['tags'] = explode(',', $meta['tags']);
+            $meta['tags'] = Dj_App_String_Util::trim($meta['tags']);
+            $meta['tags'] = array_filter($meta['tags']);
         }
 
         $meta['sort_order'] = (int) $meta['sort_order'];
