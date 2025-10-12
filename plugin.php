@@ -76,7 +76,7 @@ class Djebel_Plugin_Static_Content
         $post_rec = $blog_data[$hash_id];
 
         // Reload with full content for single post view
-        $post_rec = $this->loadPostFromMarkdown(['file' => $post_rec['file'], 'partial' => false]);
+        $post_rec = $this->loadPostFromMarkdown(['file' => $post_rec['file'], 'full' => 1]);
 
         if (empty($post_rec)) {
             return "<!--\nFailed to load post content\n-->";
@@ -300,7 +300,7 @@ class Djebel_Plugin_Static_Content
             $md_files = $this->scanMarkdownFiles($scan_dir);
 
             foreach ($md_files as $file) {
-                $post_rec = $this->loadPostFromMarkdown(['file' => $file, 'partial' => true]);
+                $post_rec = $this->loadPostFromMarkdown(['file' => $file]);
 
                 if (empty($post_rec)) {
                     continue;
@@ -404,7 +404,7 @@ class Djebel_Plugin_Static_Content
     private function loadPostFromMarkdown($params)
     {
         $file = $params['file'];
-        $partial = empty($params['partial']) ? false : true;
+        $full = !empty($params['full']);
 
         if (!file_exists($file)) {
             return [];
@@ -412,7 +412,7 @@ class Djebel_Plugin_Static_Content
 
         $ctx = [
             'file' => $file,
-            'full' => $partial ? false : true,
+            'full' => $full,
         ];
 
         $parse_res = Dj_App_Hooks::applyFilter('app.plugins.markdown.parse_front_matter', '', $ctx);
@@ -446,7 +446,7 @@ class Djebel_Plugin_Static_Content
         $ctx['meta'] = $meta;
         $html_content = '';
 
-        if (!$partial) {
+        if ($full) {
             $html_content = Dj_App_Hooks::applyFilter('app.plugins.markdown.convert_markdown', $content, $ctx);
             $html_content = empty($html_content) ? $content : $html_content;
         }
