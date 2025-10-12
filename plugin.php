@@ -364,16 +364,7 @@ class Djebel_Plugin_Static_Content
         $directory = new RecursiveDirectoryIterator($scan_dir, RecursiveDirectoryIterator::SKIP_DOTS);
 
         // Load only .md files recursively
-        $filtered = new RecursiveCallbackFilterIterator($directory, function($file_obj) {
-            $first_char = Dj_App_String_Util::getFirstChar($file_obj->getPathname());
-
-            if ($first_char == '.' || $file_obj->getExtension() != 'md') {
-                return false;
-            }
-
-            return true;
-        });
-
+        $filtered = new RecursiveCallbackFilterIterator($directory, [$this, 'shouldIncludeFile']);
         $iterator = new RecursiveIteratorIterator($filtered);
 
         foreach ($iterator as $file) {
@@ -381,6 +372,27 @@ class Djebel_Plugin_Static_Content
         }
 
         return $content_files;
+    }
+
+    /**
+     * Filter callback to determine if a file should be included in scan results
+     * @param SplFileInfo $file_obj File object from directory iterator
+     * @return bool True to include file, false to exclude
+     */
+    public function shouldIncludeFile($file_obj)
+    {
+        $first_char = Dj_App_String_Util::getFirstChar($file_obj->getPathname());
+
+        if ($first_char == '.' || $file_obj->getExtension() != 'md') {
+            $should_include = false;
+        } else {
+            $should_include = true;
+        }
+
+        $ctx = ['file_obj' => $file_obj];
+        $should_include = Dj_App_Hooks::applyFilter('app.plugin.static_content.should_include_file', $should_include, $ctx);
+
+        return $should_include;
     }
 
     private function getDataDirectory($params = [])
