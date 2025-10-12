@@ -557,33 +557,6 @@ class Djebel_Plugin_Static_Content
             $hash_id = $this->parseHashId($file);
         }
 
-        $defaults = [
-            'title' => '',
-            'summary' => '',
-            'creation_date' => '',
-            'last_modified' => '',
-            'publish_date' => '',
-            'sort_order' => 0,
-            'category' => '',
-            'tags' => [],
-            'author' => '',
-            'slug' => '',
-        ];
-
-        foreach ($defaults as $key => $default_value) {
-            if (empty($meta[$key])) {
-                $meta[$key] = $default_value;
-            }
-        }
-
-        if (is_string($meta['tags'])) {
-            $meta['tags'] = explode(',', $meta['tags']);
-            $meta['tags'] = Dj_App_String_Util::trim($meta['tags']);
-            $meta['tags'] = array_filter($meta['tags']);
-        }
-
-        $meta['sort_order'] = (int) $meta['sort_order'];
-
         $title = $meta['title'];
 
         if (empty($meta['slug'])) {
