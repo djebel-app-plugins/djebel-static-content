@@ -18,7 +18,7 @@ license: gpl2
 requires: djebel-markdown
 */
 
-$obj = new Djebel_Plugin_Static_Content();
+$obj = Djebel_Plugin_Static_Content::getInstance();
 Dj_App_Hooks::addAction('app.core.init', [$obj, 'init']);
 
 class Djebel_Plugin_Static_Content
@@ -741,5 +741,22 @@ class Djebel_Plugin_Static_Content
         }
 
         return strcasecmp($a['title'], $b['title']);
+    }
+
+    /**
+     * Singleton pattern i.e. we have only one instance of this obj
+     * @staticvar static $instance
+     * @return static
+     */
+    public static function getInstance() {
+        static $instance = null;
+
+        // This will make the calling class to be instantiated.
+        // no need each sub class to define this method.
+        if (is_null($instance)) {
+            $instance = new static();
+        }
+
+        return $instance;
     }
 }
