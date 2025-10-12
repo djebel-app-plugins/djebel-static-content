@@ -90,11 +90,11 @@ class Djebel_Plugin_Static_Content
 
         ob_start();
         ?>
-        <article class="djebel-plugin-static-blog-post-single">
-            <h1 class="djebel-plugin-static-blog-post-single-title"><?php echo Djebel_App_HTML::encodeEntities($post_rec['title']); ?></h1>
+        <article class="djebel-plugin-static-content-post-single">
+            <h1 class="djebel-plugin-static-content-post-single-title"><?php echo Djebel_App_HTML::encodeEntities($post_rec['title']); ?></h1>
 
             <?php if ($show_date || $show_author || $show_category): ?>
-                <div class="djebel-plugin-static-blog-post-single-meta">
+                <div class="djebel-plugin-static-content-post-single-meta">
                     <?php if ($show_date && !empty($post_rec['creation_date'])): ?>
                         <span><?php echo Djebel_App_HTML::encodeEntities(date('F j, Y', strtotime($post_rec['creation_date']))); ?></span>
                     <?php endif; ?>
@@ -110,14 +110,14 @@ class Djebel_Plugin_Static_Content
             <?php endif; ?>
 
             <?php if ($show_tags && !empty($post_rec['tags'])): ?>
-                <div class="djebel-plugin-static-blog-post-single-tags">
+                <div class="djebel-plugin-static-content-post-single-tags">
                     <?php foreach ($post_rec['tags'] as $tag): ?>
-                        <span class="djebel-plugin-static-blog-tag"><?php echo Djebel_App_HTML::encodeEntities($tag); ?></span>
+                        <span class="djebel-plugin-static-content-tag"><?php echo Djebel_App_HTML::encodeEntities($tag); ?></span>
                     <?php endforeach; ?>
                 </div>
             <?php endif; ?>
 
-            <div class="djebel-plugin-static-blog-post-single-content">
+            <div class="djebel-plugin-static-content-post-single-content">
                 <?php echo $post_rec['content']; ?>
             </div>
         </article>
@@ -170,9 +170,9 @@ class Djebel_Plugin_Static_Content
 
         ob_start();
         ?>
-        <div class="djebel-plugin-static-blog-container">
+        <div class="djebel-plugin-static-content-container">
             <?php if ($render_title || !empty($params['title'])): ?>
-                <h2 class="djebel-plugin-static-blog-title"><?php echo Djebel_App_HTML::encodeEntities($title); ?></h2>
+                <h2 class="djebel-plugin-static-content-title"><?php echo Djebel_App_HTML::encodeEntities($title); ?></h2>
             <?php endif; ?>
 
             <?php
@@ -184,15 +184,15 @@ class Djebel_Plugin_Static_Content
             $show_tags = $options_obj->isEnabled('plugins.djebel-static-content.show_tags');
             ?>
             <?php foreach ($blog_data as $post_rec): ?>
-                <article class="djebel-plugin-static-blog-post">
-                    <h3 class="djebel-plugin-static-blog-post-title">
+                <article class="djebel-plugin-static-content-post">
+                    <h3 class="djebel-plugin-static-content-post-title">
                         <a href="<?php echo Djebel_App_HTML::encodeEntities($post_rec['url']); ?>">
                             <?php echo Djebel_App_HTML::encodeEntities($post_rec['title']); ?>
                         </a>
                     </h3>
 
                     <?php if ($show_date || $show_author || $show_category): ?>
-                        <div class="djebel-plugin-static-blog-post-meta">
+                        <div class="djebel-plugin-static-content-post-meta">
                             <?php if ($show_date && !empty($post_rec['creation_date'])): ?>
                                 <span><?php echo Djebel_App_HTML::encodeEntities(date('F j, Y', strtotime($post_rec['creation_date']))); ?></span>
                             <?php endif; ?>
@@ -208,15 +208,15 @@ class Djebel_Plugin_Static_Content
                     <?php endif; ?>
 
                     <?php if ($show_summary && !empty($post_rec['summary'])): ?>
-                        <div class="djebel-plugin-static-blog-post-summary">
+                        <div class="djebel-plugin-static-content-post-summary">
                             <?php echo Djebel_App_HTML::encodeEntities($post_rec['summary']); ?>
                         </div>
                     <?php endif; ?>
 
                     <?php if ($show_tags && !empty($post_rec['tags'])): ?>
-                        <div class="djebel-plugin-static-blog-post-tags">
+                        <div class="djebel-plugin-static-content-post-tags">
                             <?php foreach ($post_rec['tags'] as $tag): ?>
-                                <span class="djebel-plugin-static-blog-tag"><?php echo Djebel_App_HTML::encodeEntities($tag); ?></span>
+                                <span class="djebel-plugin-static-content-tag"><?php echo Djebel_App_HTML::encodeEntities($tag); ?></span>
                             <?php endforeach; ?>
                         </div>
                     <?php endif; ?>
@@ -229,19 +229,19 @@ class Djebel_Plugin_Static_Content
                 $prev_url = Dj_App_Request::addQueryParam($this->request_param_key . '[page]', $current_page - 1, $current_url);
                 $next_url = Dj_App_Request::addQueryParam($this->request_param_key . '[page]', $current_page + 1, $current_url);
                 ?>
-                <div class="djebel-plugin-static-blog-pagination">
+                <div class="djebel-plugin-static-content-pagination">
                     <?php if ($current_page > 1): ?>
-                        <span class="djebel-plugin-static-blog-pagination-prev">
+                        <span class="djebel-plugin-static-content-pagination-prev">
                             <a href="<?php echo Djebel_App_HTML::encodeEntities($prev_url); ?>">← Previous</a>
                         </span>
                     <?php endif; ?>
 
                     <?php if ($current_page && $total_pages): ?>
-                        <span class="djebel-plugin-static-blog-pagination-info">Page <?php echo $current_page; ?> of <?php echo $total_pages; ?></span>
+                        <span class="djebel-plugin-static-content-pagination-info">Page <?php echo $current_page; ?> of <?php echo $total_pages; ?></span>
                     <?php endif; ?>
 
                     <?php if ($current_page < $total_pages): ?>
-                        <span class="djebel-plugin-static-blog-pagination-next">
+                        <span class="djebel-plugin-static-content-pagination-next">
                             <a href="<?php echo Djebel_App_HTML::encodeEntities($next_url); ?>">Next →</a>
                         </span>
                     <?php endif; ?>
