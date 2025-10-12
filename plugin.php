@@ -25,14 +25,21 @@ class Djebel_Plugin_Static_Blog
 {
     public const STATUS_DRAFT = 'draft';
     public const STATUS_PUBLISHED = 'published';
+    private $statuses = [ 
+        self::STATUS_DRAFT,
+        self::STATUS_PUBLISHED,
+    ];
+
+    /**
+     * @desc when we read the frontmatter/header of a markdown we read it partially.
+     */
     public const PARTIAL_READ_BYTES = 512;
     public const FULL_READ_BYTES = 5242880;
     public const DEFAULT_RECORDS_PER_PAGE = 10;
 
     private $plugin_id = 'djebel-static-blog';
-    private $cache_dir;
-    private $sort_by = 'file';
-    private $statuses = [self::STATUS_DRAFT, self::STATUS_PUBLISHED];
+    private $cache_dir = '';
+    private $sort_by = 'publish_date';
     private $request_param_key = 'djebel_plugin_static_blog_data';
 
     public function init()
@@ -72,6 +79,13 @@ class Djebel_Plugin_Static_Blog
         }
 
         $post_rec = $blog_data[$hash_id];
+
+        // Reload with full content for single post view
+        $post_rec = $this->loadPostFromMarkdown(['file' => $post_rec['file'], 'partial' => false]);
+
+        if (empty($post_rec)) {
+            return "<!--\nFailed to load post content\n-->";
+        }
 
         $options_obj = Dj_App_Options::getInstance();
         $show_date = $options_obj->isEnabled('plugins.djebel-static-blog.show_date');
@@ -305,12 +319,8 @@ class Djebel_Plugin_Static_Blog
 
         $options_obj = Dj_App_Options::getInstance();
         $sort_by = $options_obj->get('plugins.djebel-static-blog.sort_by');
-
-        if (!empty($sort_by)) {
-            $this->sort_by = $sort_by;
-        }
-
-        $this->sort_by = Dj_App_Hooks::applyFilter('app.plugin.static_blog.sort_by', $this->sort_by);
+        $sort_by = Dj_App_Hooks::applyFilter('app.plugin.static_blog.sort_by', $sort_by);
+        $this->sort_by = $sort_by;
 
         // Allow customization of the sort callback
         $sort_callback = Dj_App_Hooks::applyFilter('app.plugin.static_blog.sort_callback', [$this, 'sortPosts']);
@@ -350,31 +360,37 @@ class Djebel_Plugin_Static_Blog
 
     private function scanMarkdownFiles($scan_dir)
     {
-        $md_files = [];
+        $content_files = [];
 
         if (!is_dir($scan_dir)) {
-            return $md_files;
+            return $content_files;
         }
 
         $directory = new RecursiveDirectoryIterator($scan_dir, RecursiveDirectoryIterator::SKIP_DOTS);
 
-        $filtered = new RecursiveCallbackFilterIterator($directory, function($file) {
-            return $file->getExtension() === 'md' && $file->isFile();
+        // Load only .md files recursively
+        $filtered = new RecursiveCallbackFilterIterator($directory, function($file_obj) {
+            $first_char = Dj_App_String_Util::getFirstChar($file_obj->getPathname());
+
+            if ($first_char == '.' || $file_obj->getExtension() != 'md') {
+                return false;
+            }
+
+            return true;
         });
 
         $iterator = new RecursiveIteratorIterator($filtered);
 
         foreach ($iterator as $file) {
-            $md_files[] = $file->getPathname();
+            $content_files[] = $file->getPathname();
         }
 
-        return $md_files;
+        return $content_files;
     }
 
     private function getDataDirectory($params = [])
     {
-        $data_dir = Dj_App_Util::getCorePrivateDataDir(['plugin' => $this->plugin_id]) . '/posts';
-
+        $data_dir = Dj_App_Util::getCorePrivateDataDir(['plugin' => $this->plugin_id]) . '/content';
         return $data_dir;
     }
 
@@ -387,20 +403,19 @@ class Djebel_Plugin_Static_Blog
             return [];
         }
 
-        $max_len = $partial ? self::PARTIAL_READ_BYTES : self::FULL_READ_BYTES;
-        $res_obj = Dj_App_File_Util::readPartially($file, $max_len);
+        $ctx = [
+            'file' => $file,
+            'full' => $partial ? false : true,
+        ];
 
-        if ($res_obj->isError()) {
+        $parse_res = Dj_App_Hooks::applyFilter('app.plugins.markdown.parse_front_matter', '', $ctx);
+
+        if (!is_object($parse_res) || $parse_res->isError()) {
             return [];
         }
 
-        $file_content = $res_obj->output;
-
-        if (empty($file_content)) {
-            return [];
-        }
-
-        $meta = Dj_App_Util::extractMetaInfo($file_content);
+        $meta = $parse_res->meta;
+        $content = $parse_res->content;
         $status = empty($meta['status']) ? self::STATUS_PUBLISHED : $meta['status'];
 
         if ($status === self::STATUS_DRAFT) {
@@ -421,15 +436,12 @@ class Djebel_Plugin_Static_Blog
             }
         }
 
-        $ctx = [
-            'file' => $file,
-            'meta' => $meta,
-        ];
+        $ctx['meta'] = $meta;
+        $html_content = '';
 
-        $html_content = Dj_App_Hooks::applyFilter('app.plugins.markdown.parse_markdown', $file_content, $ctx);
-
-        if (empty($html_content)) {
-            $html_content = $file_content;
+        if (!$partial) {
+            $html_content = Dj_App_Hooks::applyFilter('app.plugins.markdown.convert_markdown', $content, $ctx);
+            $html_content = empty($html_content) ? $content : $html_content;
         }
 
         // Check for hash_id first, then fallback to id
@@ -696,11 +708,14 @@ class Djebel_Plugin_Static_Blog
             $val_a = isset($a['file']) ? basename($a['file']) : false;
             $val_b = isset($b['file']) ? basename($b['file']) : false;
         } elseif ($field === 'creation_date') {
-            $val_a = isset($a['creation_date']) ? strtotime($a['creation_date']) : false;
-            $val_b = isset($b['creation_date']) ? strtotime($b['creation_date']) : false;
+            $val_a = isset($a['creation_date']) ? Dj_App_Util::strtotime($a['creation_date']) : false;
+            $val_b = isset($b['creation_date']) ? Dj_App_Util::strtotime($b['creation_date']) : false;
         } elseif ($field === 'last_modified') {
-            $val_a = isset($a['last_modified']) ? strtotime($a['last_modified']) : false;
-            $val_b = isset($b['last_modified']) ? strtotime($b['last_modified']) : false;
+            $val_a = isset($a['last_modified']) ? Dj_App_Util::strtotime($a['last_modified']) : false;
+            $val_b = isset($b['last_modified']) ? Dj_App_Util::strtotime($b['last_modified']) : false;
+        } elseif ($field === 'publish_date') {
+            $val_a = isset($a['publish_date']) ? Dj_App_Util::strtotime($a['publish_date']) : false;
+            $val_b = isset($b['publish_date']) ? Dj_App_Util::strtotime($b['publish_date']) : false;
         } elseif ($field === 'title') {
             $val_a = isset($a['title']) ? $a['title'] : false;
             $val_b = isset($b['title']) ? $b['title'] : false;
