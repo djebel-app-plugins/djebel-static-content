@@ -423,6 +423,19 @@ class Djebel_Plugin_Static_Content
 
         $meta = $parse_res->meta;
         $content = $parse_res->content;
+
+        // Fallback for publish_date: creation_date -> file mtime
+        if (empty($meta['publish_date'])) {
+            if (!empty($meta['creation_date'])) {
+                $meta['publish_date'] = $meta['creation_date'];
+            } else {
+                $file_mtime = filemtime($file);
+                if ($file_mtime) {
+                    $meta['publish_date'] = date('Y-m-d H:i:s', $file_mtime);
+                }
+            }
+        }
+
         $status = empty($meta['status']) ? self::STATUS_PUBLISHED : $meta['status'];
 
         if ($status === self::STATUS_DRAFT) {
