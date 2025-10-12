@@ -278,9 +278,15 @@ class Djebel_Plugin_Static_Content
 
         $options_obj = Dj_App_Options::getInstance();
 
-        // Check per-collection cache setting, fall back to global setting
-        $cache_content = !$options_obj->isDisabled("plugins.djebel-static-content.{$content_id}.cache")
-                 || !$options_obj->isDisabled('plugins.djebel-static-content.cache');
+        // Check per-collection cache setting first, fall back to global
+        $cache_setting = $options_obj->get("plugins.djebel-static-content.{$content_id}.cache");
+
+        if (empty($cache_setting)) {
+            $cache_setting = $options_obj->get('plugins.djebel-static-content.cache');
+        }
+
+        // Default to enabled if not explicitly disabled
+        $cache_content = !Dj_App_Util::isDisabled($cache_setting);
 
         $cached_data = $cache_content ? Dj_App_Cache::get($cache_key, $cache_params) : false;
 
@@ -511,18 +517,6 @@ class Djebel_Plugin_Static_Content
 
         $meta = $parse_res->meta;
         $content = $parse_res->content;
-
-        // Fallback for publish_date: creation_date -> file mtime
-        if (empty($meta['publish_date'])) {
-            if (!empty($meta['creation_date'])) {
-                $meta['publish_date'] = $meta['creation_date'];
-            } else {
-                $file_mtime = filemtime($file);
-                if ($file_mtime) {
-                    $meta['publish_date'] = date('Y-m-d H:i:s', $file_mtime);
-                }
-            }
-        }
 
         $status = empty($meta['status']) ? self::STATUS_PUBLISHED : $meta['status'];
 
