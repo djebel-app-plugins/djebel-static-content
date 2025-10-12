@@ -18,10 +18,10 @@ license: gpl2
 requires: djebel-markdown
 */
 
-$obj = new Djebel_Plugin_Static_Blog();
+$obj = new Djebel_Plugin_Static_Content();
 Dj_App_Hooks::addAction('app.core.init', [$obj, 'init']);
 
-class Djebel_Plugin_Static_Blog
+class Djebel_Plugin_Static_Content
 {
     public const STATUS_DRAFT = 'draft';
     public const STATUS_PUBLISHED = 'published';
@@ -37,10 +37,10 @@ class Djebel_Plugin_Static_Blog
     public const FULL_READ_BYTES = 5242880;
     public const DEFAULT_RECORDS_PER_PAGE = 10;
 
-    private $plugin_id = 'djebel-static-blog';
+    private $plugin_id = 'djebel-static-content';
     private $cache_dir = '';
     private $sort_by = 'publish_date';
-    private $request_param_key = 'djebel_plugin_static_blog_data';
+    private $request_param_key = 'djebel_plugin_static_content_data';
 
     public function init()
     {
