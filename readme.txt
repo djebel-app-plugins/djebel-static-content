@@ -20,7 +20,7 @@ A simple, fast, and flexible static blog plugin for Djebel that uses markdown fi
 ### Basic Shortcode
 
 ```
-[djebel_static_blog]
+[djebel_static_content]
 ```
 
 ### Shortcode Parameters
@@ -33,7 +33,7 @@ A simple, fast, and flexible static blog plugin for Djebel that uses markdown fi
 ### Example
 
 ```
-[djebel_static_blog id="news" title="Latest News" render_title="1" per_page="5"]
+[djebel_static_content id="news" title="Latest News" render_title="1" per_page="5"]
 ```
 
 ## Post Front Matter
@@ -90,14 +90,14 @@ plugins.djebel-static-blog.scan_dirs = /path/to/dir1,/path/to/dir2
 
 ### Filters
 
-- `app.plugin.static_blog.statuses` - Modify available statuses
-- `app.plugin.static_blog.sort_by` - Modify sort field
-- `app.plugin.static_blog.scan_dirs` - Modify scan directories
-- `app.plugin.static_blog.data` - Modify blog data before rendering
+- `app.plugin.static_content.statuses` - Modify available statuses
+- `app.plugin.static_content.sort_by` - Modify sort field
+- `app.plugin.static_content.scan_dirs` - Modify scan directories
+- `app.plugin.static_content.data` - Modify blog data before rendering
 
 ## Pagination
 
-Pagination uses the query parameter `djebel_plugin_static_blog_page`.
+Pagination uses the query parameter `djebel_plugin_static_content_page`.
 
 ## Requirements
 

@@ -52,7 +52,7 @@ class Djebel_Plugin_Static_Content
     public function getStatuses()
     {
         $statuses = $this->statuses;
-        $statuses = Dj_App_Hooks::applyFilter('app.plugin.static_blog.statuses', $statuses);
+        $statuses = Dj_App_Hooks::applyFilter('app.plugin.static_content.statuses', $statuses);
 
         return $statuses;
     }
@@ -124,7 +124,7 @@ class Djebel_Plugin_Static_Content
         <?php
         $html = ob_get_clean();
         $ctx = ['post_rec' => $post_rec];
-        $html = Dj_App_Hooks::applyFilter('app.plugin.static_blog.render_blog_post', $html, $ctx);
+        $html = Dj_App_Hooks::applyFilter('app.plugin.static_content.render_blog_post', $html, $ctx);
 
         return $html;
     }
@@ -251,7 +251,7 @@ class Djebel_Plugin_Static_Content
         <?php
         $html = ob_get_clean();
         $ctx = ['blog_data' => $blog_data, 'params' => $params];
-        $html = Dj_App_Hooks::applyFilter('app.plugin.static_blog.render_blog', $html, $ctx);
+        $html = Dj_App_Hooks::applyFilter('app.plugin.static_content.render_blog', $html, $ctx);
 
         return $html;
     }
@@ -314,16 +314,16 @@ class Djebel_Plugin_Static_Content
 
         $options_obj = Dj_App_Options::getInstance();
         $sort_by = $options_obj->get('plugins.djebel-static-content.sort_by');
-        $sort_by = Dj_App_Hooks::applyFilter('app.plugin.static_blog.sort_by', $sort_by);
+        $sort_by = Dj_App_Hooks::applyFilter('app.plugin.static_content.sort_by', $sort_by);
         $this->sort_by = $sort_by;
 
         // Allow customization of the sort callback
-        $sort_callback = Dj_App_Hooks::applyFilter('app.plugin.static_blog.sort_callback', [$this, 'sortPosts']);
+        $sort_callback = Dj_App_Hooks::applyFilter('app.plugin.static_content.sort_callback', [$this, 'sortPosts']);
 
         // Use uasort to maintain hash_id keys for fast lookups
         uasort($blog_data, $sort_callback);
 
-        $blog_data = Dj_App_Hooks::applyFilter('app.plugin.static_blog.data', $blog_data);
+        $blog_data = Dj_App_Hooks::applyFilter('app.plugin.static_content.data', $blog_data);
 
         return $blog_data;
     }
@@ -347,7 +347,7 @@ class Djebel_Plugin_Static_Content
             }
         }
 
-        $scan_dirs = Dj_App_Hooks::applyFilter('app.plugin.static_blog.scan_dirs', $scan_dirs);
+        $scan_dirs = Dj_App_Hooks::applyFilter('app.plugin.static_content.scan_dirs', $scan_dirs);
         $scan_dirs = array_unique($scan_dirs);
 
         return $scan_dirs;
@@ -497,7 +497,7 @@ class Djebel_Plugin_Static_Content
             $slug = $meta['slug'];
         }
 
-        $slug = Dj_App_Hooks::applyFilter('app.plugin.static_blog.post_slug', $slug, $ctx);
+        $slug = Dj_App_Hooks::applyFilter('app.plugin.static_content.post_slug', $slug, $ctx);
 
         $result = [
             'hash_id' => $hash_id,
@@ -535,7 +535,7 @@ class Djebel_Plugin_Static_Content
         }
 
         $ctx = ['data' => $data];
-        $base_url = Dj_App_Hooks::applyFilter('app.plugin.static_blog.post_base_url', $base_url, $ctx);
+        $base_url = Dj_App_Hooks::applyFilter('app.plugin.static_content.post_base_url', $base_url, $ctx);
 
         $slug_parts = [$data['slug']];
 
