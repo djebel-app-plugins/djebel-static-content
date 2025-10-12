@@ -1,7 +1,7 @@
 <?php
 /*
-plugin_name: Djebel Static Blog
-plugin_uri: https://djebel.com/plugins/djebel-static-blog
+plugin_name: Djebel Static Content
+plugin_uri: https://djebel.com/plugins/djebel-static-content
 description: Static blog using markdown files with support for multiple directories and recursive scanning
 version: 1.0.0
 load_priority: 20
@@ -13,7 +13,7 @@ tested_with_dj_app_ver: 1.0.0
 author_name: Svetoslav Marinov (Slavi)
 company_name: Orbisius
 author_uri: https://orbisius.com
-text_domain: djebel-static-blog
+text_domain: djebel-static-content
 license: gpl2
 requires: djebel-markdown
 */
@@ -30,11 +30,6 @@ class Djebel_Plugin_Static_Content
         self::STATUS_PUBLISHED,
     ];
 
-    /**
-     * @desc when we read the frontmatter/header of a markdown we read it partially.
-     */
-    public const PARTIAL_READ_BYTES = 512;
-    public const FULL_READ_BYTES = 5242880;
     public const DEFAULT_RECORDS_PER_PAGE = 10;
 
     private $plugin_id = 'djebel-static-content';
@@ -47,8 +42,8 @@ class Djebel_Plugin_Static_Content
         $this->cache_dir = Dj_App_Util::getCoreCacheDir(['plugin' => $this->plugin_id]);
 
         $shortcode_obj = Dj_App_Shortcode::getInstance();
-        $shortcode_obj->addShortcode('djebel_static_blog', [$this, 'renderBlog']);
-        $shortcode_obj->addShortcode('djebel_static_blog_post', [$this, 'renderPost']);
+        $shortcode_obj->addShortcode('djebel_static_content', [$this, 'renderContent']);
+        $shortcode_obj->addShortcode('djebel_static_content_post', [$this, 'renderSingleContent']);
 
         // Hook into theme's page file candidates to add blog post template options
         Dj_App_Hooks::addFilter('app.themes.current_theme_page_file_candidates', [$this, 'addPageFileCandidates'], 10, 2);
@@ -62,7 +57,7 @@ class Djebel_Plugin_Static_Content
         return $statuses;
     }
 
-    public function renderPost($params = [])
+    public function renderSingleContent($params = [])
     {
         $req_obj = Dj_App_Request::getInstance();
         $plugin_params = $req_obj->get($this->request_param_key, []);
@@ -88,10 +83,10 @@ class Djebel_Plugin_Static_Content
         }
 
         $options_obj = Dj_App_Options::getInstance();
-        $show_date = $options_obj->isEnabled('plugins.djebel-static-blog.show_date');
-        $show_author = $options_obj->isEnabled('plugins.djebel-static-blog.show_author');
-        $show_category = $options_obj->isEnabled('plugins.djebel-static-blog.show_category');
-        $show_tags = $options_obj->isEnabled('plugins.djebel-static-blog.show_tags');
+        $show_date = $options_obj->isEnabled('plugins.djebel-static-content.show_date');
+        $show_author = $options_obj->isEnabled('plugins.djebel-static-content.show_author');
+        $show_category = $options_obj->isEnabled('plugins.djebel-static-content.show_category');
+        $show_tags = $options_obj->isEnabled('plugins.djebel-static-content.show_tags');
 
         ob_start();
         ?>
@@ -134,7 +129,7 @@ class Djebel_Plugin_Static_Content
         return $html;
     }
 
-    public function renderBlog($params = [])
+    public function renderContent($params = [])
     {
         $req_obj = Dj_App_Request::getInstance();
         $plugin_params = $req_obj->get($this->request_param_key, []);
@@ -147,8 +142,8 @@ class Djebel_Plugin_Static_Content
             $plugin_params['hash_id'] = $hash_id;
             $req_obj->set($this->request_param_key, $plugin_params);
 
-            // Delegate to renderPost for single post rendering
-            return $this->renderPost($params);
+            // Delegate to renderSingleContent for single post rendering
+            return $this->renderSingleContent($params);
         }
 
         // Render blog listing (existing code)
@@ -182,11 +177,11 @@ class Djebel_Plugin_Static_Content
 
             <?php
             $options_obj = Dj_App_Options::getInstance();
-            $show_date = $options_obj->isEnabled('plugins.djebel-static-blog.show_date');
-            $show_author = $options_obj->isEnabled('plugins.djebel-static-blog.show_author');
-            $show_category = $options_obj->isEnabled('plugins.djebel-static-blog.show_category');
-            $show_summary = $options_obj->isEnabled('plugins.djebel-static-blog.show_summary', 1); // default enabled
-            $show_tags = $options_obj->isEnabled('plugins.djebel-static-blog.show_tags');
+            $show_date = $options_obj->isEnabled('plugins.djebel-static-content.show_date');
+            $show_author = $options_obj->isEnabled('plugins.djebel-static-content.show_author');
+            $show_category = $options_obj->isEnabled('plugins.djebel-static-content.show_category');
+            $show_summary = $options_obj->isEnabled('plugins.djebel-static-content.show_summary', 1); // default enabled
+            $show_tags = $options_obj->isEnabled('plugins.djebel-static-content.show_tags');
             ?>
             <?php foreach ($blog_data as $post_rec): ?>
                 <article class="djebel-plugin-static-blog-post">
@@ -267,7 +262,7 @@ class Djebel_Plugin_Static_Content
         $cache_params = ['plugin' => $this->plugin_id, 'ttl' => 8 * 60 * 60];
 
         $options_obj = Dj_App_Options::getInstance();
-        $cache_blog = !$options_obj->isDisabled('plugins.djebel-static-blog.cache');
+        $cache_blog = !$options_obj->isDisabled('plugins.djebel-static-content.cache');
 
         $cached_data = $cache_blog ? Dj_App_Cache::get($cache_key, $cache_params) : false;
 
@@ -318,7 +313,7 @@ class Djebel_Plugin_Static_Content
         }
 
         $options_obj = Dj_App_Options::getInstance();
-        $sort_by = $options_obj->get('plugins.djebel-static-blog.sort_by');
+        $sort_by = $options_obj->get('plugins.djebel-static-content.sort_by');
         $sort_by = Dj_App_Hooks::applyFilter('app.plugin.static_blog.sort_by', $sort_by);
         $this->sort_by = $sort_by;
 
@@ -339,7 +334,7 @@ class Djebel_Plugin_Static_Content
         $scan_dirs = [$default_dir];
 
         $options_obj = Dj_App_Options::getInstance();
-        $config_dirs = $options_obj->get('plugins.djebel-static-blog.scan_dirs');
+        $config_dirs = $options_obj->get('plugins.djebel-static-content.scan_dirs');
 
         if (!empty($config_dirs)) {
             if (is_string($config_dirs)) {
@@ -603,7 +598,7 @@ class Djebel_Plugin_Static_Content
     public function isBlogPostRequest($params = [])
     {
         $options_obj = Dj_App_Options::getInstance();
-        $blog_prefix = $options_obj->get('plugins.djebel-static-blog.blog_prefix', '/blog');
+        $blog_prefix = $options_obj->get('plugins.djebel-static-content.blog_prefix', '/blog');
 
         $req_obj = Dj_App_Request::getInstance();
         $req_url = $req_obj->getCleanRequestUrl();
@@ -672,7 +667,7 @@ class Djebel_Plugin_Static_Content
 
         // Candidate 2: Configured blog template in subdirectory
         $options_obj = Dj_App_Options::getInstance();
-        $blog_template = $options_obj->get('plugins.djebel-static-blog.blog_template', 'blog');
+        $blog_template = $options_obj->get('plugins.djebel-static-content.blog_template', 'blog');
 
         // Append .php extension if not present
         $file_ext = pathinfo($blog_template, PATHINFO_EXTENSION);
