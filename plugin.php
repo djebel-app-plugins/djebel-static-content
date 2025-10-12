@@ -351,7 +351,12 @@ class Djebel_Plugin_Static_Content
                 }
 
                 $hash_id = $content_rec['hash_id'];
-                $content_rec['url'] = $this->generatePostUrl(['slug' => $content_rec['slug'], 'hash_id' => $hash_id]);
+                $content_rec['url'] = $this->generateContentUrl([
+                    'slug' => $content_rec['slug'],
+                    'hash_id' => $hash_id,
+                    'content_id' => $content_id,
+                ]);
+
                 $content_rec['content_id'] = $content_id; // Store content_id in record
                 $content_data[$hash_id] = $content_rec;
             }
@@ -590,18 +595,36 @@ class Djebel_Plugin_Static_Content
     }
 
     /**
-     * Generate post URL from post data
+     * Generate content URL from content data
      * @param array $data
      * @return string
      */
-    private function generatePostUrl($data)
+    public function generateContentUrl($data)
     {
         $req_obj = Dj_App_Request::getInstance();
 
         if (!empty($data['base_url'])) {
             $base_url = $data['base_url'];
         } else {
-            $base_url = $req_obj->getCleanRequestUrl();
+            $base_url = '';
+
+            if (!empty($data['content_id'])) {
+                $options_obj = Dj_App_Options::getInstance();
+                $content_id = $data['content_id'];
+                $config_key = "plugins.djebel-static-content.{$content_id}.base_url";
+                $base_url = $options_obj->get($config_key);
+
+                // If no configured base URL, construct from web path + content_id
+                if (empty($base_url)) {
+                    $web_path = $req_obj->getWebPath();
+                    $base_url = $web_path . '/' . $content_id;
+                }
+            }
+
+            // Final fallback: use current request URL (may be incorrect during content generation)
+            if (empty($base_url)) {
+                $base_url = $req_obj->getCleanRequestUrl();
+            }
         }
 
         $ctx = ['data' => $data];
