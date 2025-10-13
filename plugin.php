@@ -351,11 +351,23 @@ class Djebel_Plugin_Static_Content
                 }
 
                 $hash_id = $content_rec['hash_id'];
-                $content_rec['url'] = $this->generateContentUrl([
-                    'slug' => $content_rec['slug'],
-                    'hash_id' => $hash_id,
-                    'content_id' => $content_id,
-                ]);
+                $content_prefix = !empty($params['content_prefix']) ? $params['content_prefix'] : '';
+                $include_content_prefix_param = isset($params['include_content_prefix']) ? $params['include_content_prefix'] : '';
+                $include_content_prefix = !Dj_App_Util::isDisabled($include_content_prefix_param);
+
+                // Copy params and extend with URL generation data
+                $url_params = $params;
+                $url_params['slug'] = $content_rec['slug'];
+                $url_params['hash_id'] = $hash_id;
+                $url_params['content_id'] = $content_id;
+                $url_params['content_prefix'] = $content_prefix;
+                $url_params['include_content_prefix'] = $include_content_prefix;
+
+                // Filter URL params before generation
+                $ctx = ['content_rec' => $content_rec];
+                $url_params = Dj_App_Hooks::applyFilter('app.plugin.static_content.url_params', $url_params, $ctx);
+
+                $content_rec['url'] = $this->generateContentUrl($url_params);
 
                 $content_rec['content_id'] = $content_id; // Store content_id in record
                 $content_data[$hash_id] = $content_rec;
@@ -596,40 +608,19 @@ class Djebel_Plugin_Static_Content
 
     /**
      * Generate content URL from content data
-     * @param array $data
+     * @param array $params
      * @return string
      */
-    public function generateContentUrl($data)
+    public function generateContentUrl($params)
     {
+        // Make local copy and filter
+        $data = $params;
+        $ctx = ['params' => $params];
+        $data = Dj_App_Hooks::applyFilter('app.plugin.static_content.generate_content_url_data', $data, $ctx);
+
         $req_obj = Dj_App_Request::getInstance();
 
-        if (!empty($data['base_url'])) {
-            $base_url = $data['base_url'];
-        } else {
-            $base_url = '';
-
-            if (!empty($data['content_id'])) {
-                $options_obj = Dj_App_Options::getInstance();
-                $content_id = $data['content_id'];
-                $config_key = "plugins.djebel-static-content.{$content_id}.base_url";
-                $base_url = $options_obj->get($config_key);
-
-                // If no configured base URL, construct from web path + content_id
-                if (empty($base_url)) {
-                    $web_path = $req_obj->getWebPath();
-                    $base_url = $web_path . '/' . $content_id;
-                }
-            }
-
-            // Final fallback: use current request URL (may be incorrect during content generation)
-            if (empty($base_url)) {
-                $base_url = $req_obj->getCleanRequestUrl();
-            }
-        }
-
-        $ctx = ['data' => $data];
-        $base_url = Dj_App_Hooks::applyFilter('app.plugin.static_content.post_base_url', $base_url, $ctx);
-
+        // Build slug with hash_id
         $slug_parts = [$data['slug']];
 
         if (!empty($data['hash_id'])) {
@@ -651,9 +642,49 @@ class Djebel_Plugin_Static_Content
         $full_slug = implode('-', $slug_parts);
         $full_slug = Dj_App_String_Util::formatSlug($full_slug);
 
-        $post_url = $base_url . '/' . $full_slug;
+        // Build URL parts array
+        $url_parts = [];
+        $url_parts[] = $req_obj->getWebPath();
 
-        return $post_url;
+        // Check if content_prefix should be included
+        $include_content_prefix = !empty($data['include_content_prefix']);
+
+        if ($include_content_prefix) {
+            // Get content_prefix (shortcode > settings > content_id default)
+            $content_prefix = !empty($data['content_prefix']) ? $data['content_prefix'] : '';
+
+            if (empty($content_prefix)) {
+                if (!empty($data['content_id'])) {
+                    $options_obj = Dj_App_Options::getInstance();
+                    $content_id = $data['content_id'];
+                    $config_key = "plugins.djebel-static-content.{$content_id}.content_prefix";
+                    $content_prefix = $options_obj->get($config_key);
+
+                    if (empty($content_prefix)) {
+                        $content_prefix = $content_id;
+                    }
+                }
+            }
+
+            if (!empty($content_prefix)) {
+                $url_parts[] = $content_prefix;
+            }
+        }
+
+        $url_parts[] = $full_slug;
+
+        // Filter hook for URL parts customization
+        $ctx = ['data' => $data];
+        $url_parts = Dj_App_Hooks::applyFilter('app.plugin.static_content.url_parts', $url_parts, $ctx);
+
+        // Join and normalize path
+        $content_url = implode('/', $url_parts);
+        $content_url = Dj_App_File_Util::normalizePath($content_url);
+
+        // Filter hook for final URL customization
+        $content_url = Dj_App_Hooks::applyFilter('app.plugin.static_content.content_url', $content_url, $ctx);
+
+        return $content_url;
     }
 
     /**
