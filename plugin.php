@@ -839,7 +839,6 @@ class Djebel_Plugin_Static_Content
                 if (!empty($parsed_data['template_file'])) {
                     $template_file = $parsed_data['template_file'];
                     $new_candidate = $parent_dir_file . '/' . $template_file;
-
                     array_unshift($page_file_candidates, $new_candidate);
                 }
 
