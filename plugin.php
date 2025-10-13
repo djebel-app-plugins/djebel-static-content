@@ -140,13 +140,12 @@ class Djebel_Plugin_Static_Content
         if (!empty($hash_id)) {
             // Inject hash_id into plugin params array
             $plugin_params['hash_id'] = $hash_id;
-
-            // Pass template file from shortcode framework (auto-detected or explicit)
-            if (!empty($params['template_file'])) {
-                $plugin_params['template_file'] = $params['template_file'];
-            }
-
             $req_obj->set($this->request_param_key, $plugin_params);
+
+            // Pass template file internally (not via request params for security)
+            if (!empty($params['template_file'])) {
+                Dj_App_Util::data('djebel_static_content_template_file', $params['template_file']);
+            }
 
             // Delegate to renderSingleContent for single post rendering
             return $this->renderSingleContent($params);
@@ -798,17 +797,15 @@ class Djebel_Plugin_Static_Content
             return $page_file_candidates;
         }
 
-        $req_obj = Dj_App_Request::getInstance();
-        $plugin_params = $req_obj->get($this->request_param_key, []);
         $first_candidate = reset($page_file_candidates);
         $parent_dir_file = dirname($first_candidate);
         $parent_dir_file = Dj_App_Util::removeSlash($parent_dir_file);
 
         // Check template_file first - highest priority if explicitly provided
-        // The template_file is auto-detected by the shortcode system via backtrace
-        // or explicitly provided via template_file parameter
-        if (!empty($plugin_params['template_file'])) {
-            $content_template_file = $plugin_params['template_file'];
+        // The template_file is passed internally from shortcode (not via request for security)
+        $content_template_file = Dj_App_Util::data('djebel_static_content_template_file');
+
+        if (!empty($content_template_file)) {
             $new_candidate = $parent_dir_file . '/' . $content_template_file;
 
             array_unshift($page_file_candidates, $new_candidate);
@@ -822,6 +819,8 @@ class Djebel_Plugin_Static_Content
         }
 
         // Inject hash_id into plugin params for renderPost method
+        $req_obj = Dj_App_Request::getInstance();
+        $plugin_params = $req_obj->get($this->request_param_key, []);
         $plugin_params['hash_id'] = $hash_id;
         $req_obj->set($this->request_param_key, $plugin_params);
 
