@@ -807,7 +807,6 @@ class Djebel_Plugin_Static_Content
 
         if (!empty($content_template_file)) {
             $new_candidate = $parent_dir_file . '/' . $content_template_file;
-
             array_unshift($page_file_candidates, $new_candidate);
         }
 
