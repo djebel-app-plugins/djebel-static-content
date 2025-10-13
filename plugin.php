@@ -498,7 +498,9 @@ class Djebel_Plugin_Static_Content
         if (empty($ext)) {
             // Only accept directories for recursion
             if ($file_obj->isDir()) {
-                $should_include = Dj_App_Hooks::applyFilter('app.plugin.static_content.should_include_file', true, $ctx);
+                $local_ctx = $ctx;
+                $local_ctx['is_dir'] = true;
+                $should_include = Dj_App_Hooks::applyFilter('app.plugin.static_content.should_include_file', true, $local_ctx);
                 return $should_include;
             }
 
