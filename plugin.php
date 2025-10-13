@@ -811,6 +811,43 @@ class Djebel_Plugin_Static_Content
             array_unshift($page_file_candidates, $new_candidate);
         }
 
+        // Check url_contains configuration for template file matching
+        // This allows admins to configure templates based on URL patterns in app.ini
+        // Timing: This runs early during theme routing, before shortcode rendering
+        $options_obj = Dj_App_Options::getInstance();
+        $url_contains = $options_obj->get('plugins.djebel-static-content.url_contains', []);
+
+        if (!empty($url_contains) && is_array($url_contains)) {
+            // Get relative web path (URL after web path) for pattern matching
+            $req_obj = Dj_App_Request::getInstance();
+            $segments_path = $req_obj->getRelativeWebPath();
+
+            // Match segments path against url_contains patterns
+            // Using !== false to match pattern anywhere in URL (supports multi-lingual: /en/docs)
+            foreach ($url_contains as $pattern => $config_data) {
+                if (empty($config_data)) {
+                    continue;
+                }
+
+                if (strpos($segments_path, $pattern) === false) {
+                    continue;
+                }
+
+                // Parse query string format: "template_file=docs/latest.php&other_param=value"
+                $parsed_data = [];
+                parse_str($config_data, $parsed_data);
+
+                if (!empty($parsed_data['template_file'])) {
+                    $template_file = $parsed_data['template_file'];
+                    $new_candidate = $parent_dir_file . '/' . $template_file;
+
+                    array_unshift($page_file_candidates, $new_candidate);
+                }
+
+                break;
+            }
+        }
+
         // Try to extract hash from filename (parseHashId handles validation)
         $hash_id = $this->parseHashId($first_candidate);
 
