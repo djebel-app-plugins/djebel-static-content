@@ -829,7 +829,7 @@ class Djebel_Plugin_Static_Content
         // or explicitly provided via template_file parameter
         if (!empty($plugin_params['template_file'])) {
             $content_template_file = $plugin_params['template_file'];
-            $new_candidate = $parent_dir_file . $content_template_file;
+            $new_candidate = $parent_dir_file . '/' . $content_template_file;
             $new_candidates[] = $new_candidate;
         }
 
