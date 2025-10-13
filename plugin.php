@@ -475,20 +475,39 @@ class Djebel_Plugin_Static_Content
 
     /**
      * Filter callback to determine if a file should be included in scan results
+     * IMPORTANT: Must accept directories to allow recursion
+     * Performance: Avoids isDir() filesystem calls by checking filename pattern
      * @param SplFileInfo $file_obj File object from directory iterator
      * @return bool True to include file, false to exclude
      */
     public function shouldIncludeFile($file_obj)
     {
-        $first_char = Dj_App_String_Util::getFirstChar($file_obj->getPathname());
+        $ctx = ['file_obj' => $file_obj];
+        $filename = $file_obj->getFilename();
 
-        if ($first_char == '.' || $file_obj->getExtension() != 'md') {
-            $should_include = false;
-        } else {
-            $should_include = true;
+        // Early exit: skip hidden files/dirs (starts with dot)
+        $first_char = Dj_App_String_Util::getFirstChar($filename);
+
+        if ($first_char == '.') {
+            return false;
         }
 
-        $ctx = ['file_obj' => $file_obj];
+        $ext = $file_obj->getExtension();
+
+        // No extension - verify it's a directory before accepting for recursion
+        if (empty($ext)) {
+            // Only accept directories for recursion
+            if ($file_obj->isDir()) {
+                $should_include = Dj_App_Hooks::applyFilter('app.plugin.static_content.should_include_file', true, $ctx);
+                return $should_include;
+            }
+
+            // No extension but not a directory - reject
+            return false;
+        }
+
+        // Has extension - check if it's .md
+        $should_include = $ext == 'md';
         $should_include = Dj_App_Hooks::applyFilter('app.plugin.static_content.should_include_file', $should_include, $ctx);
 
         return $should_include;
