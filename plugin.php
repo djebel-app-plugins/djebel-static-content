@@ -341,6 +341,9 @@ class Djebel_Plugin_Static_Content
                 continue;
             }
 
+            // Normalize scan_dir once per directory (optimization - avoid repeated calls in loop)
+            $scan_dir_normalized = Dj_App_File_Util::normalizePath($scan_dir);
+
             $md_files = $this->scanMarkdownFiles($scan_dir);
 
             foreach ($md_files as $file) {
@@ -355,6 +358,26 @@ class Djebel_Plugin_Static_Content
                 $include_content_prefix_param = isset($params['include_content_prefix']) ? $params['include_content_prefix'] : '';
                 $include_content_prefix = !Dj_App_Util::isDisabled($include_content_prefix_param);
 
+                // Optional: Append file's relative directory to content_prefix in URL (content_prefix_dir=1)
+                // This allows preserving directory structure from markdown files in the final URLs
+                // Example with content_prefix="docs/latest":
+                //   File at: docs/api/v2/auth.md
+                //   Without content_prefix_dir: /web_path/docs/latest/auth-abc123
+                //   With content_prefix_dir=1:  /web_path/docs/latest/api/v2/auth-abc123
+                $rel_dir = '';
+                $content_prefix_dir_param = isset($params['content_prefix_dir']) ? $params['content_prefix_dir'] : '';
+                $content_prefix_dir = Dj_App_Util::isEnabled($content_prefix_dir_param);
+
+                if ($content_prefix_dir) {
+                    $file_dir = dirname($file);
+                    $file_dir_normalized = Dj_App_File_Util::normalizePath($file_dir);
+
+                    if (strpos($file_dir_normalized, $scan_dir_normalized) === 0) {
+                        $rel_dir = substr($file_dir_normalized, strlen($scan_dir_normalized));
+                        $rel_dir = Dj_App_Util::removeSlash($rel_dir, Dj_App_Util::FLAG_BOTH);
+                    }
+                }
+
                 // Copy params and extend with URL generation data
                 $url_params = $params;
                 $url_params['slug'] = $content_rec['slug'];
@@ -362,9 +385,10 @@ class Djebel_Plugin_Static_Content
                 $url_params['content_id'] = $content_id;
                 $url_params['content_prefix'] = $content_prefix;
                 $url_params['include_content_prefix'] = $include_content_prefix;
+                $url_params['rel_dir'] = $rel_dir;
 
                 // Filter URL params before generation
-                $ctx = ['content_rec' => $content_rec];
+                $ctx = ['content_rec' => $content_rec, 'scan_dir' => $scan_dir];
                 $url_params = Dj_App_Hooks::applyFilter('app.plugin.static_content.url_params', $url_params, $ctx);
 
                 $content_rec['url'] = $this->generateContentUrl($url_params);
@@ -669,6 +693,11 @@ class Djebel_Plugin_Static_Content
             if (!empty($content_prefix)) {
                 $url_parts[] = $content_prefix;
             }
+        }
+
+        // Add relative directory if provided
+        if (!empty($data['rel_dir'])) {
+            $url_parts[] = $data['rel_dir'];
         }
 
         $url_parts[] = $full_slug;
