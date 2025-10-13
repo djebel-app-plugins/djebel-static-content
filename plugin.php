@@ -798,7 +798,21 @@ class Djebel_Plugin_Static_Content
             return $page_file_candidates;
         }
 
+        $req_obj = Dj_App_Request::getInstance();
+        $plugin_params = $req_obj->get($this->request_param_key, []);
         $first_candidate = reset($page_file_candidates);
+        $parent_dir_file = dirname($first_candidate);
+        $parent_dir_file = Dj_App_Util::removeSlash($parent_dir_file);
+
+        // Check template_file first - highest priority if explicitly provided
+        // The template_file is auto-detected by the shortcode system via backtrace
+        // or explicitly provided via template_file parameter
+        if (!empty($plugin_params['template_file'])) {
+            $content_template_file = $plugin_params['template_file'];
+            $new_candidate = $parent_dir_file . '/' . $content_template_file;
+
+            array_unshift($page_file_candidates, $new_candidate);
+        }
 
         // Try to extract hash from filename (parseHashId handles validation)
         $hash_id = $this->parseHashId($first_candidate);
@@ -808,33 +822,14 @@ class Djebel_Plugin_Static_Content
         }
 
         // Inject hash_id into plugin params for renderPost method
-        $req_obj = Dj_App_Request::getInstance();
-        $plugin_params = $req_obj->get($this->request_param_key, []);
         $plugin_params['hash_id'] = $hash_id;
         $req_obj->set($this->request_param_key, $plugin_params);
 
-        $new_candidates = [];
-
-        // Candidate 1: Parent directory as PHP file (handles multi-lingual setups)
+        // Fallback: Parent directory as PHP file (handles multi-lingual setups)
         // The way request is parsed, the theme tries to map it to local file.
         // Normally it's ok to use pages_dir ... but if we have multi-lingual setup
         // we need to go 1 level up.
-        $parent_dir_file = dirname($first_candidate);
-        $parent_dir_file = Dj_App_Util::removeSlash($parent_dir_file);
-
-        $new_candidate = $parent_dir_file . '.php';
-        $new_candidates[] = $new_candidate;
-
-        // The template_file is auto-detected by the shortcode system via backtrace
-        // or explicitly provided via template_file parameter
-        if (!empty($plugin_params['template_file'])) {
-            $content_template_file = $plugin_params['template_file'];
-            $new_candidate = $parent_dir_file . '/' . $content_template_file;
-            $new_candidates[] = $new_candidate;
-        }
-
-        // Prepend new candidates to existing ones (check content templates first)
-        $page_file_candidates = array_merge($new_candidates, $page_file_candidates);
+        $page_file_candidates[] = $parent_dir_file . '.php';
 
         return $page_file_candidates;
     }
