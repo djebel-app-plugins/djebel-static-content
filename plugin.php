@@ -819,7 +819,7 @@ class Djebel_Plugin_Static_Content
         if (!empty($url_contains) && is_array($url_contains)) {
             // Get relative web path (URL after web path) for pattern matching
             $req_obj = Dj_App_Request::getInstance();
-            $segments_path = $req_obj->getRelativeWebPath();
+            $segments_path = $req_obj->getRelWebPath();
 
             // Match segments path against url_contains patterns
             // Using !== false to match pattern anywhere in URL (supports multi-lingual: /en/docs)
