@@ -838,8 +838,16 @@ class Djebel_Plugin_Static_Content
 
                 if (!empty($parsed_data['template_file'])) {
                     $template_file = $parsed_data['template_file'];
+
+                    // Also add candidate using pages_dir from context (if available)
+                    if (!empty($ctx['pages_dir'])) {
+                        $pages_dir = Dj_App_Util::removeSlash($ctx['pages_dir']);
+                        $pages_dir_candidate = $pages_dir . '/' . $template_file;
+                        array_push($page_file_candidates, $pages_dir_candidate);
+                    }
+
                     $new_candidate = $parent_dir_file . '/' . $template_file;
-                    array_unshift($page_file_candidates, $new_candidate);
+                    array_push($page_file_candidates, $new_candidate);
                 }
 
                 break;
