@@ -82,6 +82,15 @@ class Djebel_Plugin_Static_Content
             return "<!--\nFailed to load post content\n-->";
         }
 
+        // Publish page data for SEO plugin (maintains separation of concerns)
+        $page_data = [
+            'meta_title' => !empty($post_rec['meta_title']) ? $post_rec['meta_title'] : $post_rec['title'],
+            'meta_description' => !empty($post_rec['meta_description']) ? $post_rec['meta_description'] : '',
+            'meta_keywords' => !empty($post_rec['meta_keywords']) ? $post_rec['meta_keywords'] : '',
+        ];
+
+        Dj_App_Util::data('djebel_page_data', $page_data);
+
         $options_obj = Dj_App_Options::getInstance();
         $show_date = $options_obj->isEnabled('plugins.djebel-static-content.show_date');
         $show_author = $options_obj->isEnabled('plugins.djebel-static-content.show_author');
@@ -645,6 +654,9 @@ class Djebel_Plugin_Static_Content
             'author' => $meta['author'],
             'status' => $status,
             'file' => $file,
+            'meta_title' => $meta['meta_title'],
+            'meta_description' => $meta['meta_description'],
+            'meta_keywords' => $meta['meta_keywords'],
         ];
 
         return $result;
