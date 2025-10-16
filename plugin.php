@@ -37,6 +37,22 @@ class Djebel_Plugin_Static_Content
     private $sort_by = 'publish_date';
     private $request_param_key = 'djebel_plugin_static_content_data';
 
+    private $default_data_fields = [
+        'title' => '',
+        'meta_title' => '',
+        'meta_keywords' => '',
+        'meta_description' => '',
+        'author' => '',
+        'category' => '',
+        'hash_id' => '',
+        'slug' => '',
+        'tags' => [],
+        'summary' => '',
+        'publish_date' => '',
+        'creation_date' => '',
+        'last_modified' => '',
+    ];
+
     public function init()
     {
         $this->cache_dir = Dj_App_Util::getCoreCacheDir(['plugin' => $this->plugin_id]);
@@ -55,6 +71,19 @@ class Djebel_Plugin_Static_Content
         $statuses = Dj_App_Hooks::applyFilter('app.plugin.static_content.statuses', $statuses);
 
         return $statuses;
+    }
+
+    /**
+     * Get default fields for page data
+     * Allows other plugins to extend the fields via filter
+     * @return array
+     */
+    public function getDefaultDataFields()
+    {
+        $defaults = $this->default_data_fields;
+        $defaults = Dj_App_Hooks::applyFilter('app.plugin.static_content.default_data_fields', $defaults);
+
+        return $defaults;
     }
 
     public function renderSingleContent($params = [])
@@ -76,36 +105,20 @@ class Djebel_Plugin_Static_Content
         $post_rec = $content_data[$hash_id];
 
         // Reload with full content for single post view
-        $post_rec = $this->loadPostFromMarkdown(['file' => $post_rec['file'], 'full' => 1]);
+        $post_res_obj = $this->loadPostFromMarkdown(['file' => $post_rec['file'], 'full' => 1]);
 
-        if (empty($post_rec)) {
+        if ($post_res_obj->isError()) {
             return "<!--\nFailed to load post content\n-->";
         }
 
+        $post_rec = $post_res_obj->data();
+
         // Publish page data for SEO plugin (maintains separation of concerns)
-        // Define defaults first
-        $defaults = [
-            'title' => '',
-            'meta_title' => '',
-            'meta_keywords' => '',
-            'meta_description' => '',
-            'author' => '',
-            'category' => '',
-            'hash_id' => '',
-            'slug' => '',
-            'tags' => [],
-            'summary' => '',
-            'publish_date' => '',
-            'creation_date' => '',
-            'last_modified' => '',
-        ];
+        // Get default fields (allows other plugins to extend via filter)
+        $defaults = $this->getDefaultDataFields();
 
-        // Build page data from post record - only include non-empty values
-        $page_data = [];
-
-        foreach ($defaults as $field => $default_val) {
-            $page_data[$field] = empty($post_rec[$field]) ? $default_val : $post_rec[$field];
-        }
+        // Build page data by merging: defaults -> post record
+        $page_data = array_merge($defaults, $post_rec);
 
         // Special case: meta_title falls back to title if empty
         if (empty($page_data['meta_title']) && !empty($page_data['title'])) {
@@ -378,12 +391,13 @@ class Djebel_Plugin_Static_Content
             $md_files = $this->scanMarkdownFiles($scan_dir);
 
             foreach ($md_files as $file) {
-                $content_rec = $this->loadPostFromMarkdown(['file' => $file]);
+                $content_res_obj = $this->loadPostFromMarkdown(['file' => $file]);
 
-                if (empty($content_rec)) {
+                if ($content_res_obj->isError()) {
                     continue;
                 }
 
+                $content_rec = $content_res_obj->data();
                 $hash_id = $content_rec['hash_id'];
                 $content_prefix = !empty($params['content_prefix']) ? $params['content_prefix'] : '';
                 $include_content_prefix_param = isset($params['include_content_prefix']) ? $params['include_content_prefix'] : '';
@@ -588,13 +602,19 @@ class Djebel_Plugin_Static_Content
         return $data_dir;
     }
 
+    /**
+     * Load post from markdown file
+     * @param array $params
+     * @return Dj_App_Result
+     */
     private function loadPostFromMarkdown($params)
     {
+        $res_obj = new Dj_App_Result();
         $file = $params['file'];
         $full = !empty($params['full']);
 
         if (!file_exists($file)) {
-            return [];
+            return $res_obj; // Empty result
         }
 
         $ctx = [
@@ -605,7 +625,7 @@ class Djebel_Plugin_Static_Content
         $parse_res = Dj_App_Hooks::applyFilter('app.plugins.markdown.parse_front_matter', '', $ctx);
 
         if (!is_object($parse_res) || $parse_res->isError()) {
-            return [];
+            return $res_obj; // Empty result
         }
 
         $meta = $parse_res->meta;
@@ -614,7 +634,7 @@ class Djebel_Plugin_Static_Content
         $status = empty($meta['status']) ? self::STATUS_PUBLISHED : $meta['status'];
 
         if ($status === self::STATUS_DRAFT) {
-            return [];
+            return $res_obj; // Empty result
         }
 
         $statuses = $this->getStatuses();
@@ -627,7 +647,7 @@ class Djebel_Plugin_Static_Content
             $publish_timestamp = Dj_App_Util::strtotime($meta['publish_date']);
 
             if ($publish_timestamp && $publish_timestamp > Dj_App_Util::time()) {
-                return [];
+                return $res_obj; // Empty result
             }
         }
 
@@ -662,27 +682,26 @@ class Djebel_Plugin_Static_Content
 
         $slug = Dj_App_Hooks::applyFilter('app.plugin.static_content.post_slug', $slug, $ctx);
 
-        $result = [
+        // Get default fields to ensure all fields are present
+        $defaults = $this->getDefaultDataFields();
+
+        // Build computed values that override everything
+        $computed = [
             'hash_id' => $hash_id,
             'title' => $title,
             'slug' => $slug,
             'content' => $html_content,
-            'summary' => $meta['summary'],
-            'creation_date' => $meta['creation_date'],
-            'last_modified' => $meta['last_modified'],
-            'publish_date' => $meta['publish_date'],
-            'sort_order' => $meta['sort_order'],
-            'category' => $meta['category'],
-            'tags' => $meta['tags'],
-            'author' => $meta['author'],
             'status' => $status,
             'file' => $file,
-            'meta_title' => $meta['meta_title'],
-            'meta_description' => $meta['meta_description'],
-            'meta_keywords' => $meta['meta_keywords'],
         ];
 
-        return $result;
+        // Build data by merging: defaults -> meta -> computed values
+        $data = array_merge($defaults, $meta, $computed);
+
+        $res_obj->status(true);
+        $res_obj->data($data);
+
+        return $res_obj;
     }
 
     /**
