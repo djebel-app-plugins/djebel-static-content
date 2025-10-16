@@ -83,11 +83,34 @@ class Djebel_Plugin_Static_Content
         }
 
         // Publish page data for SEO plugin (maintains separation of concerns)
-        $page_data = [
-            'meta_title' => !empty($post_rec['meta_title']) ? $post_rec['meta_title'] : $post_rec['title'],
-            'meta_description' => !empty($post_rec['meta_description']) ? $post_rec['meta_description'] : '',
-            'meta_keywords' => !empty($post_rec['meta_keywords']) ? $post_rec['meta_keywords'] : '',
+        // Define defaults first
+        $defaults = [
+            'title' => '',
+            'meta_title' => '',
+            'meta_keywords' => '',
+            'meta_description' => '',
+            'author' => '',
+            'category' => '',
+            'hash_id' => '',
+            'slug' => '',
+            'tags' => [],
+            'summary' => '',
+            'publish_date' => '',
+            'creation_date' => '',
+            'last_modified' => '',
         ];
+
+        // Build page data from post record - only include non-empty values
+        $page_data = [];
+
+        foreach ($defaults as $field => $default_val) {
+            $page_data[$field] = empty($post_rec[$field]) ? $default_val : $post_rec[$field];
+        }
+
+        // Special case: meta_title falls back to title if empty
+        if (empty($page_data['meta_title']) && !empty($page_data['title'])) {
+            $page_data['meta_title'] = $page_data['title'];
+        }
 
         Dj_App_Util::data('djebel_page_data', $page_data);
 
