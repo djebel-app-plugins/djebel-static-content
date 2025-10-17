@@ -1066,8 +1066,8 @@ class Djebel_Plugin_Static_Content
      */
     private function findOpeningBracket($content, $pos)
     {
-        // Only look back up to 200 chars (reasonable for link text)
-        $max_backtrack = 200;
+        // Only look back up to 100 chars (reasonable for link text)
+        $max_backtrack = 100;
         $start_pos = max(0, $pos - $max_backtrack);
 
         // Backtrack to find [
