@@ -579,6 +579,7 @@ class Djebel_Plugin_Static_Content
         } else {
             $content_id = 'default';
         }
+
         $content_id = Dj_App_String_Util::formatSlug($content_id); // Sanitize and format
 
         // Default to public directory
