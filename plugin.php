@@ -25,12 +25,18 @@ class Djebel_Plugin_Static_Content
 {
     public const STATUS_DRAFT = 'draft';
     public const STATUS_PUBLISHED = 'published';
-    private $statuses = [ 
+    private $statuses = [
         self::STATUS_DRAFT,
         self::STATUS_PUBLISHED,
     ];
 
     public const DEFAULT_RECORDS_PER_PAGE = 10;
+
+    // Content linking constants for max performance
+    public const LINK_PREFIX = '(@dj:';
+    public const HASH_MIN_LEN = 8;
+    public const HASH_MAX_LEN = 15;
+    public const BRACKET_BACKTRACK_LIMIT = 100;
 
     private $plugin_id = 'djebel-static-content';
     private $cache_dir = '';
@@ -997,14 +1003,18 @@ class Djebel_Plugin_Static_Content
      */
     public function processContentLinks($content, $ctx = [])
     {
-        $pos = 0;
-        $link_prefix = '(@dj:';
-        $link_prefix_len = strlen($link_prefix);
+        // Early exit if no links to process
+        if (strpos($content, self::LINK_PREFIX) === false) {
+            return $content;
+        }
 
-        // Get all content data (cached)
+        $pos = 0;
+        $link_prefix_len = strlen(self::LINK_PREFIX);
+
+        // Get all content data (cached) - only called if links exist
         $content_data = $this->getContentData($ctx);
 
-        while (($pos = strpos($content, $link_prefix, $pos)) !== false) {
+        while (($pos = strpos($content, self::LINK_PREFIX, $pos)) !== false) {
             // Backtrack to find opening [ (optional)
             $bracket_start = $this->findOpeningBracket($content, $pos);
             $has_brackets = $bracket_start !== false;
@@ -1027,10 +1037,10 @@ class Djebel_Plugin_Static_Content
 
             $hash_id = substr($content, $ref_start, $paren_end - $ref_start);
 
-            // Validate hash_id (10-15 alphanumeric characters)
+            // Validate hash_id: length check first (fastest), then alphanumeric
             $hash_len = strlen($hash_id);
 
-            if ($hash_len < 10 || $hash_len > 15 || !ctype_alnum($hash_id)) {
+            if ($hash_len < self::HASH_MIN_LEN || $hash_len > self::HASH_MAX_LEN || !ctype_alnum($hash_id)) {
                 $pos++;
                 continue;
             }
@@ -1042,7 +1052,7 @@ class Djebel_Plugin_Static_Content
                 $text = empty($link_text) ? $title : $link_text;
 
                 // Build old pattern: [text](@dj:hash) or (@dj:hash) depending on brackets
-                $old_pattern = ($has_brackets ? '[' . $link_text . ']' : '') . $link_prefix . $hash_id . ')';
+                $old_pattern = ($has_brackets ? '[' . $link_text . ']' : '') . self::LINK_PREFIX . $hash_id . ')';
 
                 // Build new pattern: standard markdown link [text](url)
                 $new_pattern = '[' . $text . '](' . $url . ')';
@@ -1066,9 +1076,7 @@ class Djebel_Plugin_Static_Content
      */
     private function findOpeningBracket($content, $pos)
     {
-        // Only look back up to 100 chars (reasonable for link text)
-        $max_backtrack = 100;
-        $start_pos = max(0, $pos - $max_backtrack);
+        $start_pos = max(0, $pos - self::BRACKET_BACKTRACK_LIMIT);
 
         // Backtrack to find [
         for ($i = $pos - 1; $i >= $start_pos; $i--) {
