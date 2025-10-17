@@ -63,6 +63,9 @@ class Djebel_Plugin_Static_Content
 
         // Hook into theme's page file candidates to add content template options
         Dj_App_Hooks::addFilter('app.themes.current_theme_page_file_candidates', [$this, 'addPageFileCandidates'], 10, 2);
+
+        // Hook into markdown pre-processing for (@dj:hash_id) content links
+        Dj_App_Hooks::addFilter('app.plugins.markdown.pre_process_content', [$this, 'processContentLinks'], 10, 2);
     }
 
     public function getStatuses()
@@ -979,6 +982,106 @@ class Djebel_Plugin_Static_Content
         }
 
         return strcasecmp($a['title'], $b['title']);
+    }
+
+    /**
+     * Process content links in markdown before conversion to HTML
+     * Scans for (@dj:hash_id) pattern and resolves to actual URLs
+     * Supports multiple syntaxes:
+     * - (@dj:hash_id) - bare, auto-title
+     * - [](@dj:hash_id) - empty brackets, auto-title
+     * - [Custom Text](@dj:hash_id) - custom text
+     * @param string $content Raw markdown content
+     * @param array $ctx Context information
+     * @return string Processed markdown with resolved links
+     */
+    public function processContentLinks($content, $ctx = [])
+    {
+        $pos = 0;
+        $link_prefix = '(@dj:';
+        $link_prefix_len = strlen($link_prefix);
+
+        // Get all content data (cached)
+        $content_data = $this->getContentData($ctx);
+
+        while (($pos = strpos($content, $link_prefix, $pos)) !== false) {
+            // Backtrack to find opening [ (optional)
+            $bracket_start = $this->findOpeningBracket($content, $pos);
+            $has_brackets = $bracket_start !== false;
+
+            // Extract link text (could be empty for auto-title)
+            $link_text = '';
+
+            if ($has_brackets) {
+                $link_text = substr($content, $bracket_start + 1, $pos - $bracket_start - 1);
+            }
+
+            // Parse forward to get hash_id (find closing paren)
+            $ref_start = $pos + $link_prefix_len;
+            $paren_end = strpos($content, ')', $ref_start);
+
+            if ($paren_end === false) {
+                $pos++;
+                continue;
+            }
+
+            $hash_id = substr($content, $ref_start, $paren_end - $ref_start);
+
+            // Validate hash_id (10-15 alphanumeric characters)
+            $hash_len = strlen($hash_id);
+
+            if ($hash_len < 10 || $hash_len > 15 || !ctype_alnum($hash_id)) {
+                $pos++;
+                continue;
+            }
+
+            // Lookup hash_id in content data
+            if (isset($content_data[$hash_id])) {
+                $url = $content_data[$hash_id]['url'];
+                $title = $content_data[$hash_id]['title'];
+                $text = empty($link_text) ? $title : $link_text;
+
+                // Build old pattern: [text](@dj:hash) or (@dj:hash) depending on brackets
+                $old_pattern = ($has_brackets ? '[' . $link_text . ']' : '') . $link_prefix . $hash_id . ')';
+
+                // Build new pattern: standard markdown link [text](url)
+                $new_pattern = '[' . $text . '](' . $url . ')';
+
+                $content = str_replace($old_pattern, $new_pattern, $content);
+            }
+
+            $pos++;
+        }
+
+        return $content;
+    }
+
+    /**
+     * Find opening bracket by backtracking from a position
+     * Looks for [ before the current position with reasonable backtrack limit
+     * Stops if ] is encountered first (malformed)
+     * @param string $content The content to search
+     * @param int $pos Starting position to backtrack from
+     * @return int|false Position of [ or false if not found
+     */
+    private function findOpeningBracket($content, $pos)
+    {
+        // Only look back up to 200 chars (reasonable for link text)
+        $max_backtrack = 200;
+        $start_pos = max(0, $pos - $max_backtrack);
+
+        // Backtrack to find [
+        for ($i = $pos - 1; $i >= $start_pos; $i--) {
+            if ($content[$i] === ']') {
+                return false; // Found closing bracket before opening - malformed
+            }
+
+            if ($content[$i] === '[') {
+                return $i; // Found opening bracket
+            }
+        }
+
+        return false;
     }
 
     /**
