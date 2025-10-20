@@ -38,6 +38,9 @@ class Djebel_Plugin_Static_Content
     public const HASH_MAX_LEN = 15;
     public const BRACKET_BACKTRACK_LIMIT = 100;
 
+    // Configuration keys
+    public const CONFIG_USE_CONTENT_SLUGS = 'use_content_slugs';
+
     private $plugin_id = 'djebel-static-content';
     private $cache_dir = '';
     private $sort_by = 'publish_date';
@@ -68,10 +71,13 @@ class Djebel_Plugin_Static_Content
         $shortcode_obj->addShortcode('djebel_static_content_post', [$this, 'renderSingleContent']);
 
         // Hook into theme's page file candidates to add content template options
-        Dj_App_Hooks::addFilter('app.themes.current_theme_page_file_candidates', [$this, 'addPageFileCandidates'], 10, 2);
+        Dj_App_Hooks::addFilter('app.themes.current_theme_page_file_candidates', [$this, 'addPageFileCandidates']);
 
         // Hook into markdown pre-processing for (@dj:hash_id) content links
-        Dj_App_Hooks::addFilter('app.plugins.markdown.pre_process_content', [$this, 'processContentLinks'], 10, 2);
+        Dj_App_Hooks::addFilter('app.plugins.markdown.pre_process_content', [$this, 'processContentLinks']);
+
+        // Hook into 404 handler to serve slug-based content
+        Dj_App_Hooks::addFilter('app.core.theme.page_file_not_found', [$this, 'handleFileNotFound']);
     }
 
     public function getStatuses()
@@ -389,6 +395,10 @@ class Djebel_Plugin_Static_Content
         $content_id = Dj_App_String_Util::formatSlug($content_id); // Sanitize and format
         $scan_dirs = $this->getScanDirectories($params);
 
+        // Check if this collection uses slug-only mode (no hash_ids in URLs)
+        $options_obj = Dj_App_Options::getInstance();
+        $use_slugs = $options_obj->isEnabled("plugins.djebel-static-content.{$content_id}." . self::CONFIG_USE_CONTENT_SLUGS);
+
         foreach ($scan_dirs as $scan_dir) {
             if (!is_dir($scan_dir)) {
                 continue;
@@ -400,7 +410,7 @@ class Djebel_Plugin_Static_Content
             $md_files = $this->scanMarkdownFiles($scan_dir);
 
             foreach ($md_files as $file) {
-                $content_res_obj = $this->loadPostFromMarkdown(['file' => $file]);
+                $content_res_obj = $this->loadPostFromMarkdown(['file' => $file, 'content_id' => $content_id]);
 
                 if ($content_res_obj->isError()) {
                     continue;
@@ -440,14 +450,16 @@ class Djebel_Plugin_Static_Content
                 $url_params['content_prefix'] = $content_prefix;
                 $url_params['include_content_prefix'] = $include_content_prefix;
                 $url_params['rel_dir'] = $rel_dir;
+                $url_params['use_slugs'] = $use_slugs;
 
                 // Filter URL params before generation
                 $ctx = ['content_rec' => $content_rec, 'scan_dir' => $scan_dir];
                 $url_params = Dj_App_Hooks::applyFilter('app.plugin.static_content.url_params', $url_params, $ctx);
 
                 $content_rec['url'] = $this->generateContentUrl($url_params);
-
                 $content_rec['content_id'] = $content_id; // Store content_id in record
+
+                // Index by hash_id (which is slug in slug mode)
                 $content_data[$hash_id] = $content_rec;
             }
         }
@@ -622,6 +634,7 @@ class Djebel_Plugin_Static_Content
         $res_obj = new Dj_App_Result();
         $file = $params['file'];
         $full = !empty($params['full']);
+        $content_id = !empty($params['content_id']) ? $params['content_id'] : 'default';
 
         if (!file_exists($file)) {
             return $res_obj; // Empty result
@@ -669,28 +682,47 @@ class Djebel_Plugin_Static_Content
             $html_content = empty($html_content) ? $content : $html_content;
         }
 
-        // Check for hash_id first, then fallback to id
-        $hash_id = !empty($meta['hash_id']) ? $meta['hash_id'] : '';
-
-        if (empty($hash_id)) {
-            $hash_id = !empty($meta['id']) ? $meta['id'] : '';
-        }
-
-        if (empty($hash_id)) {
-            $hash_id = $this->parseHashId($file);
-        }
-
         $title = $meta['title'];
 
+        // Check if collection uses slug mode
+        $options_obj = Dj_App_Options::getInstance();
+        $use_slugs = $options_obj->isEnabled("plugins.djebel-static-content.{$content_id}." . self::CONFIG_USE_CONTENT_SLUGS);
+
+        // Generate slug
         if (empty($meta['slug'])) {
-            $slug = basename($file, '.md');
-            $slug = preg_replace('#^[\d\-_]+#', '', $slug);
+            $slug = Dj_App_File_Util::removeExt(basename($file));
+
+            // In slug mode, use filename as-is; in hash mode, strip leading numbers/dashes
+            if (!$use_slugs) {
+                $slug = preg_replace('#^[\d\-_]+#', '', $slug);
+            }
+
             $slug = Dj_App_String_Util::formatSlug($slug);
         } else {
             $slug = $meta['slug'];
         }
 
         $slug = Dj_App_Hooks::applyFilter('app.plugin.static_content.post_slug', $slug, $ctx);
+
+        // In slug mode, treat slug as hash_id; otherwise extract hash from meta/filename
+        if ($use_slugs) {
+            $hash_id = $slug;
+        } else {
+            // Extract hash_id from meta, id, or filename
+            $hash_id = !empty($meta['hash_id']) ? $meta['hash_id'] : '';
+
+            if (empty($hash_id)) {
+                $hash_id = !empty($meta['id']) ? $meta['id'] : '';
+            }
+
+            if (empty($hash_id)) {
+                $hash_id = $this->parseHashId($file);
+            }
+
+            if (empty($hash_id)) {
+                return $res_obj; // Empty result - hash_id required but not found
+            }
+        }
 
         // Get default fields to ensure all fields are present
         $defaults = $this->getDefaultDataFields();
@@ -727,11 +759,13 @@ class Djebel_Plugin_Static_Content
         $data = Dj_App_Hooks::applyFilter('app.plugin.static_content.generate_content_url_data', $data, $ctx);
 
         $req_obj = Dj_App_Request::getInstance();
+        $use_slugs = !empty($data['use_slugs']);
 
-        // Build slug with hash_id
+        // Build slug with or without hash_id depending on collection settings
         $slug_parts = [$data['slug']];
 
-        if (!empty($data['hash_id'])) {
+        // In slug mode, skip hash_id appending for clean URLs
+        if (!$use_slugs && !empty($data['hash_id'])) {
             $hash_id = $data['hash_id'];
             $pos = strpos($data['slug'], $hash_id);
 
@@ -821,7 +855,7 @@ class Djebel_Plugin_Static_Content
 
         // This is fast and works regardless of how many segments we have
         $str = basename($str);
-        $str = str_replace(['.md', '.php'], '', $str);
+        $str = Dj_App_File_Util::removeExt($str);
         // Get the last 15 characters for hash detection
         $str = substr($str, -18);
 
@@ -1091,6 +1125,113 @@ class Djebel_Plugin_Static_Content
         }
 
         return false;
+    }
+
+    /**
+     * Handle 404 by checking if slug exists in slug-enabled collections
+     * Allows serving content like /pages/about or /about directly
+     * @param string $file Current file (empty at this point)
+     * @param array $ctx Context with page, page_fmt, pages_dir, etc
+     * @return string Template file path if content found, empty otherwise
+     */
+    public function handleFileNotFound($file, $ctx = [])
+    {
+        if (empty($ctx['page_fmt'])) {
+            return '';
+        }
+
+        $page_fmt = $ctx['page_fmt'];
+        $options_obj = Dj_App_Options::getInstance();
+        $req_obj = Dj_App_Request::getInstance();
+
+        // Parse URL: try collection/slug pattern first, then fallback to slug only
+        $segments = explode('/', $page_fmt);
+        $slug = null;
+        $content_id = null;
+        $found_content = null;
+
+        // Try pattern: /collection/slug (e.g., /pages/about)
+        if (count($segments) >= 2) {
+            $potential_collection = $segments[0];
+            $potential_slug = $segments[1];
+
+            // Check if this collection uses slugs
+            $use_slugs = $options_obj->isEnabled("plugins.djebel-static-content.{$potential_collection}." . self::CONFIG_USE_CONTENT_SLUGS);
+
+            if ($use_slugs) {
+                $content_data = $this->getContentData(['content_id' => $potential_collection]);
+
+                if (isset($content_data[$potential_slug])) {
+                    $found_content = $content_data[$potential_slug];
+                    $slug = $potential_slug;
+                    $content_id = $potential_collection;
+                }
+            }
+        }
+
+        // Fallback: try slug directly across all slug-enabled collections
+        if (!$found_content) {
+            $slug = count($segments) > 0 ? $segments[count($segments) - 1] : $page_fmt;
+
+            // Get all collection names from config
+            $all_configs = $options_obj->getAll();
+            $checked_collections = [];
+
+            foreach ($all_configs as $key => $value) {
+                if (strpos($key, 'plugins.djebel-static-content.') === 0) {
+                    $parts = explode('.', $key);
+
+                    if (count($parts) >= 3) {
+                        $potential_collection = $parts[2];
+
+                        if (in_array($potential_collection, $checked_collections)) {
+                            continue;
+                        }
+
+                        $checked_collections[] = $potential_collection;
+                        $use_slugs = $options_obj->isEnabled("plugins.djebel-static-content.{$potential_collection}." . self::CONFIG_USE_CONTENT_SLUGS);
+
+                        if ($use_slugs) {
+                            $content_data = $this->getContentData(['content_id' => $potential_collection]);
+
+                            if (isset($content_data[$slug])) {
+                                $found_content = $content_data[$slug];
+                                $content_id = $potential_collection;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // No matching content found
+        if (!$found_content) {
+            return '';
+        }
+
+        // Inject hash_id into request params for renderSingleContent
+        $plugin_params = $req_obj->get($this->request_param_key, []);
+        $plugin_params['hash_id'] = $found_content['hash_id'];
+        $req_obj->set($this->request_param_key, $plugin_params);
+
+        // Create generic template file
+        $template_dir = $this->cache_dir . '/templates';
+
+        if (!is_dir($template_dir)) {
+            mkdir($template_dir, 0755, true);
+        }
+
+        $template_file = $template_dir . '/generic-page.php';
+
+        if (!file_exists($template_file)) {
+            $template_content = '<?php' . "\n";
+            $template_content .= '$plugin_obj = Djebel_Plugin_Static_Content::getInstance();' . "\n";
+            $template_content .= 'echo $plugin_obj->renderSingleContent();' . "\n";
+            file_put_contents($template_file, $template_content);
+        }
+
+        return $template_file;
     }
 
     /**
