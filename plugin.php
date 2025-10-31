@@ -194,11 +194,12 @@ class Djebel_Plugin_Static_Content
         $req_obj = Dj_App_Request::getInstance();
         $plugin_params = $req_obj->get($this->request_param_key, []);
 
-        // Auto-detect if this is a single post request by parsing hash_id from URL
-        $hash_id = $this->parseHashId();
+        // Auto-detect if this is a single post request by parsing hash_id or slug from URL
+        // Note: In slug mode, this returns the slug which serves as hash_id internally
+        $hash_id = $this->parseHashId($params);
 
         if (!empty($hash_id)) {
-            // Inject hash_id into plugin params array
+            // Inject hash_id (or slug in slug mode) into plugin params array
             $plugin_params['hash_id'] = $hash_id;
             $req_obj->set($this->request_param_key, $plugin_params);
 
@@ -835,43 +836,75 @@ class Djebel_Plugin_Static_Content
     }
 
     /**
-     * Parse hash ID from string (filename or URL)
-     * Extracts 10-12 character alphanumeric hash from end of string
-     * Get the last 15 characters from URL for hash detection
-     * This is fast and works regardless of how many segments we have
-     * @param string $str String to parse, defaults to current request URL if empty
-     * @return string
+     * Parse hash_id or slug from URL or file
+     *
+     * @param array $params Parameters:
+     *                      - url: URL to parse (or uses current request)
+     *                      - file: File path to parse (alternative to url)
+     *                      - content_id: Collection ID (enables slug mode)
+     * @return string Hash ID or slug, empty if not found
      */
-    public function parseHashId($str = '')
+    public function parseHashId($params = [])
     {
-        if (empty($str)) {
+        if (!empty($params['file'])) {
+            $url = $params['file'];
+        } elseif (!empty($params['url'])) {
+            $url = $params['url'];
+        } else {
             $req_obj = Dj_App_Request::getInstance();
-            $str = $req_obj->getCleanRequestUrl();
+            $url = $req_obj->getCleanRequestUrl();
         }
 
-        if (empty($str) || $str == '/') {
+        if (empty($url) || $url == '/') {
             return '';
         }
 
-        // This is fast and works regardless of how many segments we have
-        $str = basename($str);
-        $str = Dj_App_File_Util::removeExt($str);
-        // Get the last 15 characters for hash detection
-        $str = substr($str, -18);
+        // Try hash mode first (fast)
+        $url_basename = basename($url);
+        $url_basename = Dj_App_File_Util::removeExt($url_basename);
+        $url_substr = substr($url_basename, -18);
 
-        // Quick check: must contain a dash (hash separator)
-        if (strpos($str, '-') === false) {
+        if (strpos($url_substr, '-') !== false && Dj_App_String_Util::isAlphaNumericExt($url_substr)) {
+            $url_lower = strtolower($url_substr);
+
+            if (preg_match('#[\-\_]([a-z\d]{10,15})$#i', $url_lower, $matches)) {
+                return $matches[1];
+            }
+        }
+
+        // Try slug mode if content_id provided
+        if (!is_array($params) || empty($params['content_id'])) {
             return '';
         }
 
-        if (!Dj_App_String_Util::isAlphaNumericExt($str)) {
+        $url = Dj_App_Util::removeSlash($url, Dj_App_Util::FLAG_BOTH);
+        $segments = explode('/', $url);
+        $segments = array_filter($segments);
+        $segments = array_values($segments);
+
+        if (empty($segments)) {
             return '';
         }
 
-        $str = strtolower($str);
+        $slug = end($segments);
+        $slug = Dj_App_File_Util::removeExt($slug);
 
-        if (preg_match('#[\-\_]([a-z\d]{10,15})$#i', $str, $matches)) {
-            return $matches[1];
+        if (empty($slug) || !Dj_App_String_Util::isAlphaNumericExt($slug)) {
+            return '';
+        }
+
+        $options_obj = Dj_App_Options::getInstance();
+        $content_id = $params['content_id'];
+        $use_slugs = $options_obj->get("plugins.{$this->plugin_id}.collections.{$content_id}." . self::CONFIG_USE_CONTENT_SLUGS, false);
+
+        if (!$use_slugs) {
+            return '';
+        }
+
+        $content_data = $this->getContent($content_id);
+
+        if (!empty($content_data[$slug])) {
+            return $slug;
         }
 
         return '';
@@ -895,8 +928,13 @@ class Djebel_Plugin_Static_Content
             return $page_file_candidates;
         }
 
-        $first_candidate = reset($page_file_candidates);
-        $parent_dir_file = dirname($first_candidate);
+        $first_file_path = reset($page_file_candidates);
+
+        if (empty($first_file_path)) {
+            return $page_file_candidates;
+        }
+
+        $parent_dir_file = dirname($first_file_path);
         $parent_dir_file = Dj_App_Util::removeSlash($parent_dir_file);
 
         // Check template_file first - highest priority if explicitly provided
@@ -952,14 +990,14 @@ class Djebel_Plugin_Static_Content
             }
         }
 
-        // Try to extract hash from filename (parseHashId handles validation)
-        $hash_id = $this->parseHashId($first_candidate);
+        // Try to extract hash_id or slug from file path (supports both modes)
+        $hash_id = $this->parseHashId([ 'file' => $first_file_path, ]);
 
         if (empty($hash_id)) {
             return $page_file_candidates;
         }
 
-        // Inject hash_id into plugin params for renderPost method
+        // Inject hash_id (or slug in slug mode) into plugin params for renderPost method
         $req_obj = Dj_App_Request::getInstance();
         $plugin_params = $req_obj->get($this->request_param_key, []);
         $plugin_params['hash_id'] = $hash_id;
