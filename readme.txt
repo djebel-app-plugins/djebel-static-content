@@ -1,6 +1,36 @@
-# Djebel Static Blog Plugin
+# Djebel Static Content Plugin
 
-A simple, fast, and flexible static blog plugin for Djebel that uses markdown files.
+A simple, fast, and flexible static content plugin for Djebel that uses markdown files.
+
+## Overview
+
+The plugin supports two modes of operation for content URLs and identification:
+
+### 1. Hash Mode (default)
+- **URLs**: `/collection/slug-abc123def` (hash appended to slug)
+- Content indexed by hash_id extracted from filename or meta
+- Fast detection via parseHashId() using regex pattern
+- **Example**: `/blog/getting-started-abc123def456`
+
+### 2. Slug Mode (per-collection config)
+- **URLs**: `/collection/slug` (clean URLs, no hash)
+- Content indexed by slug (hash_id = slug internally)
+- Requires `use_content_slugs` enabled in collection config
+- Detection via parseSlugOrHashId() with content lookup
+- **Example**: `/pages/about`
+
+### Important Internal Behavior
+
+- In slug mode, the 'hash_id' field contains the slug value
+- This allows unified content lookup: `$content_data[$hash_id]` works in both modes
+- Content is ALWAYS indexed by hash_id in the content_data array
+- The difference is: hash mode uses generated hash, slug mode uses slug as hash_id
+
+### URL Routing Differences
+
+- **Hash mode**: parseHashId() succeeds → direct rendering via renderContent()
+- **Slug mode**: parseHashId() fails → 404 handler → handleFileNotFound() → slug lookup
+- **With parseSlugOrHashId()**: both modes can use direct rendering (optimized path)
 
 ## Features
 
@@ -64,26 +94,39 @@ The numbers and separators are automatically stripped from the slug.
 
 ## Configuration
 
+Add to your `app.ini` file:
+
 ### Cache
 
 Enable/disable caching:
-```
-plugins.djebel-static-blog.cache = 1
+```ini
+[plugins]
+djebel-static-content.cache = 1
 ```
 
 ### Sorting
 
 Set default sort field:
-```
-plugins.djebel-static-blog.sort_by = creation_date
+```ini
+[plugins]
+djebel-static-content.sort_by = creation_date
 ```
 
 Options: file, creation_date, last_modified, title, sort_order
 
 ### Additional Scan Directories
 
+```ini
+[plugins]
+djebel-static-content.scan_dirs = /path/to/dir1,/path/to/dir2
 ```
-plugins.djebel-static-blog.scan_dirs = /path/to/dir1,/path/to/dir2
+
+### Slug Mode Configuration
+
+Enable slug mode for a collection (clean URLs without hash):
+```ini
+[plugins]
+djebel-static-content.collections[pages].use_content_slugs = 1
 ```
 
 ## Hooks and Filters
