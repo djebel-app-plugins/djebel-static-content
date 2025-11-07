@@ -695,7 +695,8 @@ class Djebel_Plugin_Static_Content
 
         // Generate slug
         if (empty($meta['slug'])) {
-            $slug = Dj_App_File_Util::removeExt(basename($file));
+            $base_name = basename($file);
+            $slug = Dj_App_File_Util::removeExt($base_name);
 
             // In slug mode, use filename as-is; in hash mode, strip leading numbers/dashes
             if (!$use_slugs) {
@@ -725,8 +726,9 @@ class Djebel_Plugin_Static_Content
             }
 
             if (empty($hash_id)) {
-                $res_obj->msg = 'Hash ID required but not found in meta or filename';
-                return $res_obj;
+                $hash_id = $slug; // if no hash use the slug.
+//                $res_obj->msg = 'Hash ID required but not found in meta or filename';
+//                return $res_obj;
             }
         }
 
