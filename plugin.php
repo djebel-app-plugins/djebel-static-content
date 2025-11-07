@@ -726,9 +726,7 @@ class Djebel_Plugin_Static_Content
             }
 
             if (empty($hash_id)) {
-                $hash_id = $slug; // if no hash use the slug.
-//                $res_obj->msg = 'Hash ID required but not found in meta or filename';
-//                return $res_obj;
+                $hash_id = $slug;
             }
         }
 
@@ -770,26 +768,24 @@ class Djebel_Plugin_Static_Content
         $use_slugs = !empty($data['use_slugs']);
 
         // Build slug with or without hash_id depending on collection settings
-        $slug_parts = [$data['slug']];
+        $slug = $data['slug'];
+        $hash_id = empty($data['hash_id']) ? '' : $data['hash_id'];
 
-        // In slug mode, skip hash_id appending for clean URLs
-        if (!$use_slugs && !empty($data['hash_id'])) {
-            $hash_id = $data['hash_id'];
-            $pos = strpos($data['slug'], $hash_id);
+        // Default to slug as-is
+        $full_slug = $slug;
 
-            // Only add hash_id if it's not already in slug with proper separator (- or _)
-            if ($pos === false || $pos === 0) {
-                $slug_parts[] = $hash_id;
-            } elseif ($pos > 0) {
-                $sep = $data['slug'][$pos - 1];
+        // Append hash only if: not slug mode, has hash, and doesn't already have it
+        if (!$use_slugs && !empty($hash_id)) {
+            $expected_suffix = '-' . $hash_id;
+            $suffix_len = strlen($expected_suffix);
+            $slug_suffix = substr($slug, -$suffix_len);
+            $already_has_hash = $slug === $hash_id || $slug_suffix === $expected_suffix;
 
-                if ($sep !== '-' && $sep !== '_') {
-                    $slug_parts[] = $hash_id;
-                }
+            if (!$already_has_hash) {
+                $full_slug = $slug . $expected_suffix;
             }
         }
 
-        $full_slug = implode('-', $slug_parts);
         $full_slug = Dj_App_String_Util::formatSlug($full_slug);
 
         // Build URL parts array
