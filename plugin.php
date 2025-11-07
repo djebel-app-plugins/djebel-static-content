@@ -527,13 +527,13 @@ class Djebel_Plugin_Static_Content
             return $content_files;
         }
 
-        $directory = new RecursiveDirectoryIterator($scan_dir, RecursiveDirectoryIterator::SKIP_DOTS);
+        $dir_iterator = new RecursiveDirectoryIterator($scan_dir, RecursiveDirectoryIterator::SKIP_DOTS);
 
         // Load only .md files recursively
-        $filtered = new RecursiveCallbackFilterIterator($directory, [$this, 'shouldIncludeFile']);
-        $iterator = new RecursiveIteratorIterator($filtered);
+        $filtered_iterator = new RecursiveCallbackFilterIterator($dir_iterator, [$this, 'shouldIncludeFile']);
+        $recursive_iterator = new RecursiveIteratorIterator($filtered_iterator);
 
-        foreach ($iterator as $file) {
+        foreach ($recursive_iterator as $file) {
             $content_files[] = $file->getPathname();
         }
 
@@ -638,7 +638,8 @@ class Djebel_Plugin_Static_Content
         $content_id = !empty($params['content_id']) ? $params['content_id'] : 'default';
 
         if (!file_exists($file)) {
-            return $res_obj; // Empty result
+            $res_obj->msg = 'File does not exist';
+            return $res_obj;
         }
 
         $ctx = [
@@ -649,7 +650,8 @@ class Djebel_Plugin_Static_Content
         $parse_res = Dj_App_Hooks::applyFilter('app.plugins.markdown.parse_front_matter', '', $ctx);
 
         if (!is_object($parse_res) || $parse_res->isError()) {
-            return $res_obj; // Empty result
+            $res_obj->msg = 'Failed to parse markdown front matter';
+            return $res_obj;
         }
 
         $meta = $parse_res->meta;
@@ -658,7 +660,8 @@ class Djebel_Plugin_Static_Content
         $status = empty($meta['status']) ? self::STATUS_PUBLISHED : $meta['status'];
 
         if ($status === self::STATUS_DRAFT) {
-            return $res_obj; // Empty result
+            $res_obj->msg = 'Post status is draft';
+            return $res_obj;
         }
 
         $statuses = $this->getStatuses();
@@ -671,7 +674,8 @@ class Djebel_Plugin_Static_Content
             $publish_timestamp = Dj_App_Util::strtotime($meta['publish_date']);
 
             if ($publish_timestamp && $publish_timestamp > Dj_App_Util::time()) {
-                return $res_obj; // Empty result
+                $res_obj->msg = 'Post publish date is in the future';
+                return $res_obj;
             }
         }
 
@@ -721,7 +725,8 @@ class Djebel_Plugin_Static_Content
             }
 
             if (empty($hash_id)) {
-                return $res_obj; // Empty result - hash_id required but not found
+                $res_obj->msg = 'Hash ID required but not found in meta or filename';
+                return $res_obj;
             }
         }
 
