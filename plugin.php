@@ -350,7 +350,7 @@ class Djebel_Plugin_Static_Content
 
         $cached_data = $cache_content ? Dj_App_Cache::get($cache_key, $cache_params) : false;
 
-        if (!empty($cached_data)) {
+        if ($cache_content && !empty($cached_data)) {
             return $cached_data;
         }
 
@@ -714,12 +714,7 @@ class Djebel_Plugin_Static_Content
         if ($use_slugs) {
             $hash_id = $slug;
         } else {
-            // Extract hash_id from meta, id, or filename
-            $hash_id = !empty($meta['hash_id']) ? $meta['hash_id'] : '';
-
-            if (empty($hash_id)) {
-                $hash_id = !empty($meta['id']) ? $meta['id'] : '';
-            }
+            $hash_id = $this->getHash($meta);
 
             if (empty($hash_id)) {
                 $hash_id = $this->parseHashId($file);
@@ -836,6 +831,28 @@ class Djebel_Plugin_Static_Content
         $content_url = Dj_App_Hooks::applyFilter('app.plugin.static_content.content_url', $content_url, $ctx);
 
         return $content_url;
+    }
+
+    /**
+     * Extract hash_id from front matter metadata
+     *
+     * @param array $meta Front matter metadata
+     * @return string Hash ID from metadata, empty if not found
+     */
+    private function getHash($meta = [])
+    {
+        // Extract hash_id from meta (hash_id > hash > id)
+        $hash_id = empty($meta['hash_id']) ? '' : $meta['hash_id'];
+
+        if (empty($hash_id)) {
+            $hash_id = empty($meta['hash']) ? '' : $meta['hash'];
+        }
+
+        if (empty($hash_id)) {
+            $hash_id = empty($meta['id']) ? '' : $meta['id'];
+        }
+
+        return $hash_id;
     }
 
     /**
