@@ -471,12 +471,17 @@ class Djebel_Plugin_Static_Content
 
         $options_obj = Dj_App_Options::getInstance();
 
-        // Check per-collection sort setting, fall back to global
+        // Check per-collection sort setting, fall back to global, then default
         $config_key = "plugins.djebel-static-content.{$content_id}.sort_by";
         $sort_by = $options_obj->get($config_key);
 
-        if ($sort_by === null) {
+        if (empty($sort_by)) {
             $sort_by = $options_obj->get('plugins.djebel-static-content.sort_by');
+        }
+
+        // Use default if still empty
+        if (empty($sort_by)) {
+            $sort_by = $this->sort_by;
         }
 
         $ctx = ['content_id' => $content_id, 'params' => $params];
@@ -1074,7 +1079,8 @@ class Djebel_Plugin_Static_Content
 
         if ($val_a && $val_b) {
             if (is_numeric($val_a) && is_numeric($val_b)) {
-                return $val_a - $val_b;
+                // For dates (timestamps), sort descending (newest first)
+                return $val_b - $val_a;
             } else {
                 return strcasecmp($val_a, $val_b);
             }
