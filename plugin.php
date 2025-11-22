@@ -60,6 +60,8 @@ class Djebel_Plugin_Static_Content
         'publish_date' => '',
         'creation_date' => '',
         'last_modified' => '',
+        'etag' => '',
+        'last_modified_header' => '',
     ];
 
     public function init()
@@ -127,6 +129,31 @@ class Djebel_Plugin_Static_Content
         }
 
         $post_rec = $post_res_obj->data();
+
+        // Handle HTTP caching headers (ETag and Last-Modified)
+        // Check conditional request headers and send 304 if content unchanged
+        $cache_params = [
+            'etag' => empty($post_rec['etag']) ? '' : $post_rec['etag'],
+            'last_modified' => empty($post_rec['last_modified_header']) ? '' : $post_rec['last_modified_header'],
+        ];
+
+        if ($this->isContentNotModified($cache_params)) {
+            // Content not modified - send 304 Not Modified response
+            $req_obj->setResponseCode(304);
+            $req_obj->setHeader('ETag', sprintf('"%s"', $cache_params['etag']));
+            $req_obj->setHeader('Last-Modified', $cache_params['last_modified']);
+            $req_obj->outputHeaders();
+            exit;
+        }
+
+        // Content changed or first request - emit cache headers with full response
+        if (!empty($cache_params['etag'])) {
+            $req_obj->setHeader('ETag', sprintf('"%s"', $cache_params['etag']));
+        }
+
+        if (!empty($cache_params['last_modified'])) {
+            $req_obj->setHeader('Last-Modified', $cache_params['last_modified']);
+        }
 
         // Publish page data for SEO plugin (maintains separation of concerns)
         // Get default fields (allows other plugins to extend via filter)
@@ -219,6 +246,54 @@ class Djebel_Plugin_Static_Content
 
         if (empty($content_data)) {
             return "<!--\nNo content available\n-->";
+        }
+
+        // Generate cache headers for listing page
+        // ETag: Hash of all individual post ETags (changes when any post changes)
+        // Last-Modified: Most recent post modification time
+        $listing_etags = [];
+        $latest_timestamp = 0;
+
+        foreach ($content_data as $post_rec) {
+            $post_etag = empty($post_rec['etag']) ? '' : $post_rec['etag'];
+
+            if (!empty($post_etag)) {
+                $listing_etags[] = $post_etag;
+            }
+
+            $post_last_modified = empty($post_rec['last_modified_header']) ? '' : $post_rec['last_modified_header'];
+
+            if (!empty($post_last_modified)) {
+                // HTTP headers are always GMT - use strtotime directly
+                $post_timestamp = strtotime($post_last_modified);
+
+                if (!empty($post_timestamp) && $post_timestamp > $latest_timestamp) {
+                    $latest_timestamp = $post_timestamp;
+                }
+            }
+        }
+
+        $listing_cache_params = [
+            'etag' => empty($listing_etags) ? '' : md5(implode('-', $listing_etags)),
+            'last_modified' => $latest_timestamp > 0 ? gmdate('D, d M Y H:i:s', $latest_timestamp) . ' GMT' : '',
+        ];
+
+        // Check conditional request and send 304 if listing not modified
+        if ($this->isContentNotModified($listing_cache_params)) {
+            $req_obj->setResponseCode(304);
+            $req_obj->setHeader('ETag', sprintf('"%s"', $listing_cache_params['etag']));
+            $req_obj->setHeader('Last-Modified', $listing_cache_params['last_modified']);
+            $req_obj->outputHeaders();
+            exit;
+        }
+
+        // Emit cache headers for fresh listing response
+        if (!empty($listing_cache_params['etag'])) {
+            $req_obj->setHeader('ETag', sprintf('"%s"', $listing_cache_params['etag']));
+        }
+
+        if (!empty($listing_cache_params['last_modified'])) {
+            $req_obj->setHeader('Last-Modified', $listing_cache_params['last_modified']);
         }
         $current_page = !empty($plugin_params['page']) ? (int) $plugin_params['page'] : 1;
         $current_page = max(1, $current_page);
@@ -378,6 +453,61 @@ class Djebel_Plugin_Static_Content
         }
 
         return $result;
+    }
+
+    /**
+     * Check if client's cached version is still valid (for 304 Not Modified responses)
+     * Compares incoming If-None-Match (ETag) and If-Modified-Since headers
+     * against current content ETag and Last-Modified values
+     *
+     * @param array $params Cache parameters with 'etag' and 'last_modified' keys
+     * @return bool True if content not modified (should send 304), false otherwise
+     */
+    private function isContentNotModified($params)
+    {
+        // Early return: filter out empty values - if nothing left, no cache data
+        $params_filtered = array_filter($params);
+
+        if (empty($params_filtered)) {
+            return false;
+        }
+
+        $etag = empty($params['etag']) ? '' : $params['etag'];
+        $last_modified = empty($params['last_modified']) ? '' : $params['last_modified'];
+
+        // Check If-None-Match header (ETag comparison) - takes precedence per RFC 7232
+        if (!empty($_SERVER['HTTP_IF_NONE_MATCH']) && !empty($etag)) {
+            // Strip quotes if present (ETags may be quoted per RFC 7232)
+            $if_none_match = trim($_SERVER['HTTP_IF_NONE_MATCH'], '"');
+            $etag_clean = trim($etag, '"');
+
+            if ($if_none_match === $etag_clean) {
+                return true;
+            }
+        }
+
+        // Check If-Modified-Since header (timestamp comparison)
+        if (!empty($_SERVER['HTTP_IF_MODIFIED_SINCE']) && !empty($last_modified)) {
+            // HTTP headers are always GMT - use strtotime directly (not localized util)
+            $if_modified_timestamp = strtotime($_SERVER['HTTP_IF_MODIFIED_SINCE']);
+
+            if (empty($if_modified_timestamp)) {
+                return false;
+            }
+
+            $last_modified_timestamp = strtotime($last_modified);
+
+            if (empty($last_modified_timestamp)) {
+                return false;
+            }
+
+            // Content unchanged if not modified since client's cached version
+            if ($last_modified_timestamp <= $if_modified_timestamp) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function generateContentData($params = [])
@@ -733,18 +863,27 @@ class Djebel_Plugin_Static_Content
         // Get default fields to ensure all fields are present
         $defaults = $this->getDefaultDataFields();
 
-        // Build computed values that override everything
-        $computed = [
+        // Generate ETag and Last-Modified headers for HTTP caching
+        // ETag format: hash_id + file modification time for uniqueness
+        // Last-Modified: RFC 7231 compliant HTTP date format
+        $file_mtime = file_exists($file) ? filemtime($file) : 0;
+        $etag = md5($hash_id . '-' . $file_mtime);
+        $last_modified_header = $file_mtime > 0 ? gmdate('D, d M Y H:i:s', $file_mtime) . ' GMT' : '';
+
+        // Build override fields that take precedence over defaults and meta
+        $override_fields = [
             'hash_id' => $hash_id,
             'title' => $title,
             'slug' => $slug,
             'content' => $html_content,
             'status' => $status,
             'file' => $file,
+            'etag' => $etag,
+            'last_modified_header' => $last_modified_header,
         ];
 
-        // Build data by merging: defaults -> meta -> computed values
-        $data = array_merge($defaults, $meta, $computed);
+        // Build data by merging: defaults -> meta -> override fields
+        $data = array_merge($defaults, $meta, $override_fields);
 
         $res_obj->status(true);
         $res_obj->data($data);
