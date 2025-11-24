@@ -412,33 +412,24 @@ class Djebel_Plugin_Static_Content
 
         $options_obj = Dj_App_Options::getInstance();
 
-        // Check per-collection cache setting first, fall back to global
-        $cache_setting = $options_obj->get("plugins.djebel-static-content.{$content_id}.cache");
+        // Check if cache is disabled at per-collection level first
+        $cache_disabled = $options_obj->isDisabled("plugins.djebel-static-content.{$content_id}.cache")
+                || $options_obj->isDisabled("plugins.djebel-static-content.cache");
 
-        if (empty($cache_setting)) {
-            $cache_setting = $options_obj->get('plugins.djebel-static-content.cache');
-        }
+        $cache_content = !$cache_disabled;
 
-        // Check per-collection cache TTL first, fall back to global, then default (4 hours)
-        $cache_ttl = $options_obj->get("plugins.djebel-static-content.{$content_id}.cache_ttl");
+        if ($cache_content) {
+            // Check per-collection cache TTL first, fall back to global, then default (4 hours)
+            $default_cache_ttl = $options_obj->get('plugins.djebel-static-content.cache_ttl');
+            $cache_ttl = $options_obj->get("plugins.djebel-static-content.{$content_id}.cache_ttl", $default_cache_ttl);
+            $cache_ttl = empty($cache_ttl) ? 4 * 60 * 60 : $cache_ttl;
 
-        if (empty($cache_ttl)) {
-            $cache_ttl = $options_obj->get('plugins.djebel-static-content.cache_ttl');
-        }
+            $cache_params = ['plugin' => $this->plugin_id, 'ttl' => (int) $cache_ttl];
+            $cached_data = Dj_App_Cache::get($cache_key, $cache_params);
 
-        if (empty($cache_ttl)) {
-            $cache_ttl = 4 * 60 * 60;
-        }
-
-        $cache_params = ['plugin' => $this->plugin_id, 'ttl' => (int) $cache_ttl];
-
-        // Default to enabled if not explicitly disabled
-        $cache_content = !Dj_App_Util::isDisabled($cache_setting);
-
-        $cached_data = $cache_content ? Dj_App_Cache::get($cache_key, $cache_params) : false;
-
-        if ($cache_content && !empty($cached_data)) {
-            return $cached_data;
+            if ($cache_content && !empty($cached_data)) {
+                return $cached_data;
+            }
         }
 
         $content_data = $this->generateContentData($params);
