@@ -409,7 +409,6 @@ class Djebel_Plugin_Static_Content
         }
         $content_id = Dj_App_String_Util::formatSlug($content_id); // Sanitize and format
         $cache_key = $this->plugin_id . '_' . $content_id;
-        $cache_params = ['plugin' => $this->plugin_id, 'ttl' => 8 * 60 * 60];
 
         $options_obj = Dj_App_Options::getInstance();
 
@@ -419,6 +418,19 @@ class Djebel_Plugin_Static_Content
         if (empty($cache_setting)) {
             $cache_setting = $options_obj->get('plugins.djebel-static-content.cache');
         }
+
+        // Check per-collection cache TTL first, fall back to global, then default (4 hours)
+        $cache_ttl = $options_obj->get("plugins.djebel-static-content.{$content_id}.cache_ttl");
+
+        if (empty($cache_ttl)) {
+            $cache_ttl = $options_obj->get('plugins.djebel-static-content.cache_ttl');
+        }
+
+        if (empty($cache_ttl)) {
+            $cache_ttl = 4 * 60 * 60;
+        }
+
+        $cache_params = ['plugin' => $this->plugin_id, 'ttl' => (int) $cache_ttl];
 
         // Default to enabled if not explicitly disabled
         $cache_content = !Dj_App_Util::isDisabled($cache_setting);
