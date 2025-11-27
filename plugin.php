@@ -130,6 +130,24 @@ class Djebel_Plugin_Static_Content
 
         $post_rec = $post_res_obj->data();
 
+        // Append shared footer if enabled and exists
+        $content_id = !empty($params['content_id']) ? $params['content_id'] : 'default';
+        $options_obj = Dj_App_Options::getInstance();
+        $shared_footer_enabled = $options_obj->get("plugins.djebel_static_content.{$content_id}.append_shared_footer", 0);
+
+        if ($shared_footer_enabled) {
+            $shared_footer_file = $this->getDataDirectory(['content_id' => $content_id]) . '/shared_footer.md';
+
+            if (file_exists($shared_footer_file)) {
+                $shared_footer_res_obj = $this->loadPostFromMarkdown(['file' => $shared_footer_file, 'full' => 1]);
+
+                if ($shared_footer_res_obj->isSuccess()) {
+                    $shared_footer_data = $shared_footer_res_obj->data();
+                    $post_rec['content'] .= "\n" . $shared_footer_data['content'];
+                }
+            }
+        }
+
         // Handle HTTP caching headers (ETag and Last-Modified)
         // Check conditional request headers and send 304 if content unchanged
         $cache_params = [
@@ -689,6 +707,11 @@ class Djebel_Plugin_Static_Content
         $first_char = Dj_App_String_Util::getFirstChar($filename);
 
         if ($first_char == '.') {
+            return false;
+        }
+
+        // Skip shared_footer.md (used for appending to posts, not listing)
+        if ($filename === 'shared_footer.md') {
             return false;
         }
 
