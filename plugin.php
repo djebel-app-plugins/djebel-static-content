@@ -820,8 +820,6 @@ class Djebel_Plugin_Static_Content
             $html_content = empty($html_content) ? $content : $html_content;
         }
 
-        $title = $meta['title'];
-
         // Check if collection uses slug mode
         $options_obj = Dj_App_Options::getInstance();
         $use_slugs = $options_obj->isEnabled("plugins.djebel-static-content.{$content_id}." . self::CONFIG_USE_CONTENT_SLUGS);
@@ -842,6 +840,17 @@ class Djebel_Plugin_Static_Content
         }
 
         $slug = Dj_App_Hooks::applyFilter('app.plugin.static_content.post_slug', $slug, $ctx);
+
+        $title = '';
+
+        if (!empty($meta['title'])) {
+            $title = $meta['title'];
+        } elseif (!empty($meta['meta_title'])) {
+            $title = $meta['meta_title'];
+        } else {
+            $title = $slug;
+            $title = str_replace('-', ' ', $title);
+        }
 
         // In slug mode, treat slug as hash_id; otherwise extract hash from meta/filename
         if ($use_slugs) {
