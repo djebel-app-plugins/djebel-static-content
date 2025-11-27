@@ -133,7 +133,7 @@ class Djebel_Plugin_Static_Content
         // Append shared footer if enabled and exists
         $content_id = !empty($params['content_id']) ? $params['content_id'] : 'default';
         $options_obj = Dj_App_Options::getInstance();
-        $shared_footer_enabled = $options_obj->get("plugins.djebel_static_content.{$content_id}.append_shared_footer", 0);
+        $shared_footer_enabled = $options_obj->get("plugins.djebel-static-content.{$content_id}.append_shared_footer", 0);
 
         if ($shared_footer_enabled) {
             $shared_footer_file = $this->getDataDirectory(['content_id' => $content_id]) . '/shared_footer.md';
@@ -1231,8 +1231,8 @@ class Djebel_Plugin_Static_Content
             $val_a = isset($a['publish_date']) ? Dj_App_Util::strtotime($a['publish_date']) : false;
             $val_b = isset($b['publish_date']) ? Dj_App_Util::strtotime($b['publish_date']) : false;
         } elseif ($field === 'title') {
-            $val_a = isset($a['title']) ? $a['title'] : false;
-            $val_b = isset($b['title']) ? $b['title'] : false;
+            $val_a = !empty($a['title']) ? $a['title'] : '';
+            $val_b = !empty($b['title']) ? $b['title'] : '';
         } elseif ($field === 'sort_order') {
             $val_a = isset($a['sort_order']) ? $a['sort_order'] : false;
             $val_b = isset($b['sort_order']) ? $b['sort_order'] : false;
