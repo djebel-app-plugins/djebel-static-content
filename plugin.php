@@ -38,6 +38,9 @@ class Djebel_Plugin_Static_Content
     public const HASH_MAX_LEN = 15;
     public const BRACKET_BACKTRACK_LIMIT = 100;
 
+    // Hash ID URL marker: -dj-HASH (e.g., getting-started-dj-abc123def456)
+    public const HASH_MARKER = '-dj-';
+
     // Configuration keys
     public const CONFIG_USE_CONTENT_SLUGS = 'use_content_slugs';
 
@@ -110,6 +113,29 @@ class Djebel_Plugin_Static_Content
         $find_result = $this->findContentFile($full_page);
 
         if (empty($find_result)) {
+            // No site_content file - try to detect hash_id for blog/collection URLs
+            $hash_id = $this->parseHashId();
+
+            if (!empty($hash_id)) {
+                // Infer content_id from segment1 (e.g., /blog/post-dj-hash → content_id='blog')
+                $req_obj = Dj_App_Request::getInstance();
+                $content_id = empty($req_obj->segment1) ? 'default' : $req_obj->segment1;
+
+                // Store hash_id in request for renderSingleContent to retrieve
+                $plugin_params = [ 'hash_id' => $hash_id, ];
+                $req_obj->set($this->request_param_key, $plugin_params);
+
+                $render_params = [ 'content_id' => $content_id, ];
+                $rendered = $this->renderSingleContent($render_params);
+
+                if (!empty($rendered) && strpos($rendered, '<!--') !== 0) {
+                    $page_obj->setContent($rendered);
+                    $res_obj->status(true);
+
+                    return $res_obj;
+                }
+            }
+
             $res_obj->msg = 'No content file found';
             return $res_obj;
         }
@@ -174,6 +200,11 @@ class Djebel_Plugin_Static_Content
         $site_content_dir = $this->getSiteContentDir();
 
         if (empty($site_content_dir)) {
+            return [];
+        }
+
+        // Cheap check: skip if site_content dir doesn't exist
+        if (!is_dir($site_content_dir)) {
             return [];
         }
 
@@ -404,6 +435,15 @@ class Djebel_Plugin_Static_Content
             return "<!--\nNo post hash_id provided\n-->";
         }
 
+        // Get content_id from params (support both content_id and section_id)
+        if (!empty($params['content_id'])) {
+            $content_id = $params['content_id'];
+        } elseif (!empty($params['section_id'])) {
+            $content_id = $params['section_id'];
+        } else {
+            $content_id = 'default';
+        }
+
         $content_data = $this->getContentData($params);
 
         if (empty($content_data[$hash_id])) {
@@ -413,7 +453,13 @@ class Djebel_Plugin_Static_Content
         $post_rec = $content_data[$hash_id];
 
         // Reload with full content for single post view
-        $post_res_obj = $this->loadPostFromMarkdown(['file' => $post_rec['file'], 'full' => 1]);
+        $load_params = [
+            'file' => $post_rec['file'],
+            'full' => 1,
+            'content_id' => $content_id,
+        ];
+
+        $post_res_obj = $this->loadPostFromMarkdown($load_params);
 
         if ($post_res_obj->isError()) {
             return "<!--\nFailed to load post content\n-->";
@@ -672,7 +718,11 @@ class Djebel_Plugin_Static_Content
         }
 
         $content_data = $this->generateContentData($params);
-        Dj_App_Cache::set($cache_key, $content_data, $cache_params);
+
+        // Only cache non-empty results to avoid caching failures
+        if (!empty($content_data)) {
+            Dj_App_Cache::set($cache_key, $content_data, $cache_params);
+        }
 
         return $content_data;
     }
@@ -1045,7 +1095,8 @@ class Djebel_Plugin_Static_Content
             $hash_id = $this->getHash($meta);
 
             if (empty($hash_id)) {
-                $hash_id = $this->parseHashId($file);
+                $parse_params = [ 'file' => $file, ];
+                $hash_id = $this->parseHashId($parse_params);
             }
 
             if (empty($hash_id)) {
@@ -1103,14 +1154,12 @@ class Djebel_Plugin_Static_Content
         $full_slug = $slug;
 
         // Append hash only if: not slug mode, has hash, and doesn't already have it
+        // Format: -dj-HASH (e.g., getting-started-dj-abc123def456)
         if (!$use_slugs && !empty($hash_id)) {
-            $expected_suffix = '-' . $hash_id;
-            $suffix_len = strlen($expected_suffix);
-            $slug_suffix = substr($slug, -$suffix_len);
-            $already_has_hash = $slug === $hash_id || $slug_suffix === $expected_suffix;
+            $hash_suffix = self::HASH_MARKER . $hash_id;
 
-            if (!$already_has_hash) {
-                $full_slug = $slug . $expected_suffix;
+            if (strpos($slug, $hash_suffix) === false) {
+                $full_slug = $slug . $hash_suffix;
             }
         }
 
@@ -1208,59 +1257,26 @@ class Djebel_Plugin_Static_Content
             $url = $req_obj->getCleanRequestUrl();
         }
 
-        if (empty($url) || $url == '/') {
+        if (empty($url) || $url === '/') {
             return '';
         }
 
-        // Try hash mode first (fast)
+        // Quick check: must contain hash marker
+        if (strpos($url, self::HASH_MARKER) === false) {
+            return '';
+        }
+
+        // Format: -dj-HASH (e.g., getting-started-dj-abc123def456)
         $url_basename = basename($url);
         $url_basename = Dj_App_File_Util::removeExt($url_basename);
-        $url_substr = substr($url_basename, -18);
+        $url_lower = strtolower($url_basename);
+        $pattern = '#' . self::HASH_MARKER . '([a-z\d]{10,15})$#i';
 
-        if ((strpos($url_substr, '-') !== false) && Dj_App_String_Util::isAlphaNumericExt($url_substr)) {
-            $url_lower = strtolower($url_substr);
-
-            if (preg_match('#[\-\_]([a-z\d]{10,15})$#i', $url_lower, $matches)) {
-                return $matches[1];
-            }
-        }
-
-        // Try slug mode if content_id provided
-        if (!is_array($params) || empty($params['content_id'])) {
+        if (!preg_match($pattern, $url_lower, $matches)) {
             return '';
         }
 
-        $url = Dj_App_Util::removeSlash($url, Dj_App_Util::FLAG_BOTH);
-        $segments = explode('/', $url);
-        $segments = array_filter($segments);
-        $segments = array_values($segments);
-
-        if (empty($segments)) {
-            return '';
-        }
-
-        $slug = end($segments);
-        $slug = Dj_App_File_Util::removeExt($slug);
-
-        if (empty($slug) || !Dj_App_String_Util::isAlphaNumericExt($slug)) {
-            return '';
-        }
-
-        $options_obj = Dj_App_Options::getInstance();
-        $content_id = $params['content_id'];
-        $use_slugs = $options_obj->get("plugins.{$this->plugin_id}.collections.{$content_id}." . self::CONFIG_USE_CONTENT_SLUGS, false);
-
-        if (!$use_slugs) {
-            return '';
-        }
-
-        $content_data = $this->getContentData([ 'content_id' => $content_id, ]);
-
-        if (!empty($content_data[$slug])) {
-            return $slug;
-        }
-
-        return '';
+        return $matches[1];
     }
 
     /**
