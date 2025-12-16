@@ -119,6 +119,13 @@ class Djebel_Plugin_Static_Content
         $content_file = $find_result['file'];
         $content_ext = $find_result['ext'];
 
+        // Hook for caching plugin to handle HTTP cache headers (ETag, 304)
+        $cache_ctx = [
+            'file' => $content_file,
+        ];
+
+        Dj_App_Hooks::doAction('app.plugin.static_content.pre_load_content', $cache_ctx);
+
         // Load and process content - pass ext to avoid recalculating
         $load_params = [
             'file' => $content_file,
