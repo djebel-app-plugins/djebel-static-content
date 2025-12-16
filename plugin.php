@@ -422,7 +422,13 @@ class Djebel_Plugin_Static_Content
         $post_rec = $post_res_obj->data();
 
         // Hook after post loaded - pass last_modified and file for caching
+        // Fallback to creation_date if last_modified is empty
         $last_modified = empty($post_rec['last_modified']) ? '' : $post_rec['last_modified'];
+
+        if (empty($last_modified)) {
+            $last_modified = empty($post_rec['creation_date']) ? '' : $post_rec['creation_date'];
+        }
+
         $file = empty($post_rec['file']) ? '' : $post_rec['file'];
 
         $post_load_ctx = [
