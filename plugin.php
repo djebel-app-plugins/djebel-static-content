@@ -189,6 +189,11 @@ class Djebel_Plugin_Static_Content
             }
         }
 
+        // Home page only checks home.* files, no directory fallback
+        if ($path === 'home') {
+            return [];
+        }
+
         // Check index files only if directory exists (fallback - about/index.md)
         $path_dir = $site_content_dir . '/' . $path;
 
