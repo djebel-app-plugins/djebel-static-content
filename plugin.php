@@ -239,7 +239,11 @@ class Djebel_Plugin_Static_Content
 
         $site_content_dir = Dj_App_Util::getContentDataDir($data_dir_params) . '/' . $site_content_dir_name;
 
-        // Only cache if directory exists
+        // Allow plugins (e.g., djebel-lang) to modify site_content_dir
+        // Filter applied BEFORE is_dir check (lang plugin appends /en)
+        $site_content_dir = Dj_App_Hooks::applyFilter('app.plugin.static_content.site_content_dir', $site_content_dir);
+
+        // Only cache if final directory exists
         if (!is_dir($site_content_dir)) {
             return '';
         }
