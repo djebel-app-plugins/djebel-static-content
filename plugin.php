@@ -44,7 +44,10 @@ class Djebel_Plugin_Static_Content
     private $plugin_id = 'djebel-static-content';
     private $cache_dir = '';
     private $sort_by = 'publish_date';
+    private $check_extensions = [ 'md', 'html', 'php', ];
     private $request_param_key = 'djebel_plugin_static_content_data';
+    private $site_content_dir = '';
+    private $content_extensions = [];
 
     private $default_data_fields = [
         'title' => '',
@@ -78,8 +81,254 @@ class Djebel_Plugin_Static_Content
         // Hook into markdown pre-processing for (@dj:hash_id) content links
         Dj_App_Hooks::addFilter('app.plugins.markdown.pre_process_content', [$this, 'processContentLinks']);
 
-        // Hook into 404 handler to serve slug-based content
-        Dj_App_Hooks::addFilter('app.core.theme.page_file_not_found', [$this, 'handleFileNotFound']);
+        // Load site content early - stores content in Page object for theme to render
+        $this->loadSiteContent();
+    }
+
+    /**
+     * Load site content early into Page object
+     * Called during init, before theme template lookup
+     * Content stored in Page object, theme renders it via getContent()
+     *
+     * @return Dj_App_Result
+     */
+    public function loadSiteContent()
+    {
+        $res_obj = new Dj_App_Result();
+        $options_obj = Dj_App_Options::getInstance();
+
+        // Cheapest check first - is feature disabled?
+        $is_disabled = $options_obj->isDisabled('plugins.djebel-static-content.site_content_enabled');
+
+        if ($is_disabled) {
+            $res_obj->msg = 'Site content feature is disabled';
+            return $res_obj;
+        }
+
+        $page_obj = Dj_App_Page::getInstance();
+        $full_page = $page_obj->get('full_page');
+
+        // Find content file - handles home page internally
+        $find_result = $this->findContentFile($full_page);
+
+        if (empty($find_result)) {
+            $res_obj->msg = 'No content file found';
+            return $res_obj;
+        }
+
+        $content_file = $find_result['file'];
+        $content_ext = $find_result['ext'];
+
+        // Load and process content - pass ext to avoid recalculating
+        $load_params = [
+            'file' => $content_file,
+            'ext' => $content_ext,
+        ];
+
+        $content = $this->loadContentFile($load_params);
+
+        if (empty($content)) {
+            $res_obj->msg = 'Content file is empty';
+            return $res_obj;
+        }
+
+        // Store in Page object with metadata
+        $meta = [
+            'file' => $content_file,
+            'path' => $full_page,
+            'ext' => $content_ext,
+        ];
+
+        $page_obj->setContent($content, $meta);
+
+        $res_obj->status(true);
+        $res_obj->data($meta);
+
+        return $res_obj;
+    }
+
+    /**
+     * Find content file matching the given path
+     * Priority: {path}.{ext} > {path}/index.{ext}
+     * Direct file checked first (most common case)
+     *
+     * CONSISTENCY: Always return same type (array).
+     * Empty array on failure, populated array on success.
+     *
+     * @param string $path URL path to match
+     * @return array Array with 'file' and 'ext' keys if found, empty array otherwise
+     */
+    public function findContentFile($path)
+    {
+        // Home page: empty or / -> check for 'home' file
+        if (empty($path) || $path === '/') {
+            $path = 'home';
+        }
+
+        // Get site_content directory (cached in property)
+        $site_content_dir = $this->getSiteContentDir();
+
+        if (empty($site_content_dir)) {
+            return [];
+        }
+
+        // Get file extensions to check
+        $extensions = $this->getContentExtensions();
+
+        // Check direct file first (most common case - about.md)
+        foreach ($extensions as $ext) {
+            $file_path = $site_content_dir . '/' . $path . '.' . $ext;
+
+            if (file_exists($file_path)) {
+                $result = [
+                    'file' => $file_path,
+                    'ext' => $ext,
+                ];
+
+                return $result;
+            }
+        }
+
+        // Check index files only if directory exists (fallback - about/index.md)
+        $path_dir = $site_content_dir . '/' . $path;
+
+        if (is_dir($path_dir)) {
+            foreach ($extensions as $ext) {
+                $file_path = $path_dir . '/index.' . $ext;
+
+                if (file_exists($file_path)) {
+                    $result = [
+                        'file' => $file_path,
+                        'ext' => $ext,
+                    ];
+
+                    return $result;
+                }
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Get site content directory path (cached)
+     *
+     * @return string Directory path, empty if doesn't exist
+     */
+    private function getSiteContentDir()
+    {
+        // Return cached value if already computed
+        if (!empty($this->site_content_dir)) {
+            return $this->site_content_dir;
+        }
+
+        $options_obj = Dj_App_Options::getInstance();
+        $site_content_dir_name = $options_obj->get(
+            'plugins.djebel-static-content.site_content_dir',
+            'site_content'
+        );
+
+        $data_dir_params = [
+            'plugin' => $this->plugin_id,
+        ];
+
+        $site_content_dir = Dj_App_Util::getContentDataDir($data_dir_params) . '/' . $site_content_dir_name;
+
+        // Only cache if directory exists
+        if (!is_dir($site_content_dir)) {
+            return '';
+        }
+
+        $this->site_content_dir = $site_content_dir;
+
+        return $this->site_content_dir;
+    }
+
+    /**
+     * Load and process content file
+     *
+     * @param array $params {
+     *     @type string $file Path to content file
+     *     @type string $ext File extension (optional, avoids recalculating)
+     * }
+     * @return string Processed content, empty on failure
+     */
+    public function loadContentFile($params = [])
+    {
+        $file = empty($params['file']) ? '' : $params['file'];
+
+        if (empty($file)) {
+            return '';
+        }
+
+        // Use passed extension or calculate if not provided
+        if (!empty($params['ext'])) {
+            $ext = $params['ext'];
+        } else {
+            $ext = Dj_App_File_Util::getExt($file);
+        }
+
+        // Load based on file type
+        $content = '';
+
+        if ($ext === 'php') {
+            ob_start();
+            include $file;
+            $content = ob_get_clean();
+        } else {
+            $content = file_get_contents($file);
+        }
+
+        $content = Dj_App_String_Util::trim($content);
+
+        $ctx = [
+            'file' => $file,
+            'ext' => $ext,
+        ];
+
+        // Markdown conversion handled by markdown plugin via app.page.content filter
+        $content = Dj_App_Hooks::applyFilter('app.page.content', $content, $ctx);
+
+        return $content;
+    }
+
+    /**
+     * Get content file extensions to check (cached)
+     *
+     * @return array File extensions
+     */
+    private function getContentExtensions()
+    {
+        // Return cached value if already computed
+        if (!empty($this->content_extensions)) {
+            return $this->content_extensions;
+        }
+
+        $options_obj = Dj_App_Options::getInstance();
+        $extensions = [];
+        $extensions_config = $options_obj->get('plugins.djebel-static-content.content.file_ext');
+
+        if (!empty($extensions_config)) {
+            if (is_string($extensions_config)) {
+                $extensions = explode(',', $extensions_config);
+            } elseif (is_array($extensions_config)) {
+                $extensions = $extensions_config;
+            }
+        }
+
+        $extensions = empty($extensions) ? $this->check_extensions : (array) $extensions;
+
+        // Allow plugins to modify extensions
+        $extensions = Dj_App_Hooks::applyFilter('app.plugin.static_content.content_extensions', $extensions);
+
+        // Clean up: trim whitespace and leading dots (user might put .md instead of md)
+        $extensions = Dj_App_String_Util::trim($extensions, '.');
+        $extensions = array_filter($extensions);
+        $extensions = array_unique($extensions);
+
+        $this->content_extensions = $extensions;
+
+        return $this->content_extensions;
     }
 
     public function getStatuses()
@@ -103,11 +352,39 @@ class Djebel_Plugin_Static_Content
         return $defaults;
     }
 
+    /**
+     * Get records per page for pagination
+     * Checks: params -> options -> default constant
+     *
+     * @param array $params Optional params with 'per_page' key
+     * @return int
+     */
+    public function getPerPage($params = [])
+    {
+        // Check params first
+        if (!empty($params['per_page'])) {
+            $per_page = $params['per_page'];
+            $per_page = (int) $per_page;
+            $per_page = Dj_App_Hooks::applyFilter('app.plugin.static_content.per_page', $per_page, $params);
+
+            return $per_page;
+        }
+
+        // Check options
+        $options_obj = Dj_App_Options::getInstance();
+        $per_page = $options_obj->get('plugins.djebel-static-content.per_page');
+        $per_page = empty($per_page) ? self::DEFAULT_RECORDS_PER_PAGE : $per_page;
+        $per_page = (int) $per_page;
+        $per_page = Dj_App_Hooks::applyFilter('app.plugin.static_content.per_page', $per_page, $params);
+
+        return $per_page;
+    }
+
     public function renderSingleContent($params = [])
     {
         $req_obj = Dj_App_Request::getInstance();
         $plugin_params = $req_obj->get($this->request_param_key, []);
-        $hash_id = !empty($plugin_params['hash_id']) ? $plugin_params['hash_id'] : '';
+        $hash_id = empty($plugin_params['hash_id']) ? '' : $plugin_params['hash_id'];
 
         if (empty($hash_id)) {
             return "<!--\nNo post hash_id provided\n-->";
@@ -137,23 +414,7 @@ class Djebel_Plugin_Static_Content
             'last_modified' => empty($post_rec['last_modified_header']) ? '' : $post_rec['last_modified_header'],
         ];
 
-        if ($this->isContentNotModified($cache_params)) {
-            // Content not modified - send 304 Not Modified response
-            $req_obj->setResponseCode(304);
-            $req_obj->setHeader('ETag', sprintf('"%s"', $cache_params['etag']));
-            $req_obj->setHeader('Last-Modified', $cache_params['last_modified']);
-            $req_obj->outputHeaders();
-            exit;
-        }
-
-        // Content changed or first request - emit cache headers with full response
-        if (!empty($cache_params['etag'])) {
-            $req_obj->setHeader('ETag', sprintf('"%s"', $cache_params['etag']));
-        }
-
-        if (!empty($cache_params['last_modified'])) {
-            $req_obj->setHeader('Last-Modified', $cache_params['last_modified']);
-        }
+        $this->applyHttpCacheHeaders($cache_params);
 
         // Publish page data for SEO plugin (maintains separation of concerns)
         // Get default fields (allows other plugins to extend via filter)
@@ -273,32 +534,28 @@ class Djebel_Plugin_Static_Content
             }
         }
 
+        $listing_etag_input = implode('-', $listing_etags);
+        $listing_etag = empty($listing_etags) ? '' : Dj_App_Util::generateHash($listing_etag_input, 16);
+
+        $last_modified = '';
+
+        if ($latest_timestamp > 0) {
+            $last_modified = gmdate('D, d M Y H:i:s', $latest_timestamp) . ' GMT';
+        }
+
         $listing_cache_params = [
-            'etag' => empty($listing_etags) ? '' : md5(implode('-', $listing_etags)),
-            'last_modified' => $latest_timestamp > 0 ? gmdate('D, d M Y H:i:s', $latest_timestamp) . ' GMT' : '',
+            'etag' => $listing_etag,
+            'last_modified' => $last_modified,
         ];
 
-        // Check conditional request and send 304 if listing not modified
-        if ($this->isContentNotModified($listing_cache_params)) {
-            $req_obj->setResponseCode(304);
-            $req_obj->setHeader('ETag', sprintf('"%s"', $listing_cache_params['etag']));
-            $req_obj->setHeader('Last-Modified', $listing_cache_params['last_modified']);
-            $req_obj->outputHeaders();
-            exit;
-        }
+        $this->applyHttpCacheHeaders($listing_cache_params);
 
-        // Emit cache headers for fresh listing response
-        if (!empty($listing_cache_params['etag'])) {
-            $req_obj->setHeader('ETag', sprintf('"%s"', $listing_cache_params['etag']));
-        }
-
-        if (!empty($listing_cache_params['last_modified'])) {
-            $req_obj->setHeader('Last-Modified', $listing_cache_params['last_modified']);
-        }
-        $current_page = !empty($plugin_params['page']) ? (int) $plugin_params['page'] : 1;
+        // @todo move to another method or block for pagination?
+        $current_page = empty($plugin_params['page']) ? 1 : $plugin_params['page'];
+        $current_page = (int) $current_page;
         $current_page = max(1, $current_page);
 
-        $per_page = empty($params['per_page']) ? self::DEFAULT_RECORDS_PER_PAGE : (int) $params['per_page'];
+        $per_page = $this->getPerPage($params);
         $total_posts = count($content_data);
         $total_pages = ceil($total_posts / $per_page);
         $offset = ($current_page - 1) * $per_page;
@@ -391,6 +648,7 @@ class Djebel_Plugin_Static_Content
         </div>
         <?php
         $html = ob_get_clean();
+        $html = Dj_App_String_Util::trim($html);
         $ctx = ['content_data' => $content_data, 'params' => $params];
         $html = Dj_App_Hooks::applyFilter('app.plugin.static_content.render_content', $html, $ctx);
 
@@ -506,6 +764,41 @@ class Djebel_Plugin_Static_Content
         }
 
         return false;
+    }
+
+    /**
+     * Apply HTTP cache headers and handle 304 responses
+     *
+     * @param array $params Cache parameters with 'etag' and 'last_modified' keys
+     * @return void
+     */
+    private function applyHttpCacheHeaders($params)
+    {
+        $req_obj = Dj_App_Request::getInstance();
+        $etag = empty($params['etag']) ? '' : $params['etag'];
+        $last_modified = empty($params['last_modified']) ? '' : $params['last_modified'];
+
+        if ($this->isContentNotModified($params)) {
+            if (!empty($etag)) {
+                $req_obj->setHeader('ETag', sprintf('"%s"', $etag));
+            }
+
+            if (!empty($last_modified)) {
+                $req_obj->setHeader('Last-Modified', $last_modified);
+            }
+
+            $req_obj->setResponseCode(304);
+            $req_obj->outputHeaders();
+            Dj_App::exit();
+        }
+
+        if (!empty($etag)) {
+            $req_obj->setHeader('ETag', sprintf('"%s"', $etag));
+        }
+
+        if (!empty($last_modified)) {
+            $req_obj->setHeader('Last-Modified', $last_modified);
+        }
     }
 
     private function generateContentData($params = [])
@@ -708,8 +1001,8 @@ class Djebel_Plugin_Static_Content
             return false;
         }
 
-        // Has extension - check if it's .md
-        $should_include = $ext == 'md';
+        // Has extension - check if it's a supported type
+        $should_include = in_array($ext, $this->check_extensions);
         $should_include = Dj_App_Hooks::applyFilter('app.plugin.static_content.should_include_file', $should_include, $ctx);
 
         return $should_include;
@@ -768,7 +1061,7 @@ class Djebel_Plugin_Static_Content
         $res_obj = new Dj_App_Result();
         $file = $params['file'];
         $full = !empty($params['full']);
-        $content_id = !empty($params['content_id']) ? $params['content_id'] : 'default';
+        $content_id = empty($params['content_id']) ? 'default' : $params['content_id'];
 
         if (!file_exists($file)) {
             $res_obj->msg = 'File does not exist';
@@ -874,8 +1167,14 @@ class Djebel_Plugin_Static_Content
         // ETag format: hash_id + file modification time for uniqueness
         // Last-Modified: RFC 7231 compliant HTTP date format
         $file_mtime = file_exists($file) ? filemtime($file) : 0;
-        $etag = md5($hash_id . '-' . $file_mtime);
-        $last_modified_header = $file_mtime > 0 ? gmdate('D, d M Y H:i:s', $file_mtime) . ' GMT' : '';
+        $last_modified_header = '';
+
+        if ($file_mtime > 0) {
+            $last_modified_header = gmdate('D, d M Y H:i:s', $file_mtime) . ' GMT';
+        }
+
+        $etag_input = $hash_id . ':' . $file_mtime;
+        $etag = Dj_App_Util::generateHash($etag_input, 16);
 
         // Build override fields that take precedence over defaults and meta
         $override_fields = [
@@ -1035,7 +1334,7 @@ class Djebel_Plugin_Static_Content
         $url_basename = Dj_App_File_Util::removeExt($url_basename);
         $url_substr = substr($url_basename, -18);
 
-        if (strpos($url_substr, '-') !== false && Dj_App_String_Util::isAlphaNumericExt($url_substr)) {
+        if ((strpos($url_substr, '-') !== false) && Dj_App_String_Util::isAlphaNumericExt($url_substr)) {
             $url_lower = strtolower($url_substr);
 
             if (preg_match('#[\-\_]([a-z\d]{10,15})$#i', $url_lower, $matches)) {
@@ -1072,7 +1371,7 @@ class Djebel_Plugin_Static_Content
             return '';
         }
 
-        $content_data = $this->getContent($content_id);
+        $content_data = $this->getContentData([ 'content_id' => $content_id, ]);
 
         if (!empty($content_data[$slug])) {
             return $slug;
@@ -1335,113 +1634,6 @@ class Djebel_Plugin_Static_Content
         }
 
         return false;
-    }
-
-    /**
-     * Handle 404 by checking if slug exists in slug-enabled collections
-     * Allows serving content like /pages/about or /about directly
-     * @param string $file Current file (empty at this point)
-     * @param array $ctx Context with page, page_fmt, pages_dir, etc
-     * @return string Template file path if content found, empty otherwise
-     */
-    public function handleFileNotFound($file, $ctx = [])
-    {
-        if (empty($ctx['page_fmt'])) {
-            return '';
-        }
-
-        $page_fmt = $ctx['page_fmt'];
-        $options_obj = Dj_App_Options::getInstance();
-        $req_obj = Dj_App_Request::getInstance();
-
-        // Parse URL: try collection/slug pattern first, then fallback to slug only
-        $segments = explode('/', $page_fmt);
-        $slug = null;
-        $content_id = null;
-        $found_content = null;
-
-        // Try pattern: /collection/slug (e.g., /pages/about)
-        if (count($segments) >= 2) {
-            $potential_collection = $segments[0];
-            $potential_slug = $segments[1];
-
-            // Check if this collection uses slugs
-            $use_slugs = $options_obj->isEnabled("plugins.djebel-static-content.{$potential_collection}." . self::CONFIG_USE_CONTENT_SLUGS);
-
-            if ($use_slugs) {
-                $content_data = $this->getContentData(['content_id' => $potential_collection]);
-
-                if (isset($content_data[$potential_slug])) {
-                    $found_content = $content_data[$potential_slug];
-                    $slug = $potential_slug;
-                    $content_id = $potential_collection;
-                }
-            }
-        }
-
-        // Fallback: try slug directly across all slug-enabled collections
-        if (!$found_content) {
-            $slug = count($segments) > 0 ? $segments[count($segments) - 1] : $page_fmt;
-
-            // Get all collection names from config
-            $all_configs = $options_obj->getAll();
-            $checked_collections = [];
-
-            foreach ($all_configs as $key => $value) {
-                if (strpos($key, 'plugins.djebel-static-content.') === 0) {
-                    $parts = explode('.', $key);
-
-                    if (count($parts) >= 3) {
-                        $potential_collection = $parts[2];
-
-                        if (in_array($potential_collection, $checked_collections)) {
-                            continue;
-                        }
-
-                        $checked_collections[] = $potential_collection;
-                        $use_slugs = $options_obj->isEnabled("plugins.djebel-static-content.{$potential_collection}." . self::CONFIG_USE_CONTENT_SLUGS);
-
-                        if ($use_slugs) {
-                            $content_data = $this->getContentData(['content_id' => $potential_collection]);
-
-                            if (isset($content_data[$slug])) {
-                                $found_content = $content_data[$slug];
-                                $content_id = $potential_collection;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // No matching content found
-        if (!$found_content) {
-            return '';
-        }
-
-        // Inject hash_id into request params for renderSingleContent
-        $plugin_params = $req_obj->get($this->request_param_key, []);
-        $plugin_params['hash_id'] = $found_content['hash_id'];
-        $req_obj->set($this->request_param_key, $plugin_params);
-
-        // Create generic template file
-        $template_dir = $this->cache_dir . '/templates';
-
-        if (!is_dir($template_dir)) {
-            mkdir($template_dir, 0755, true);
-        }
-
-        $template_file = $template_dir . '/generic-page.php';
-
-        if (!file_exists($template_file)) {
-            $template_content = '<?php' . "\n";
-            $template_content .= '$plugin_obj = Djebel_Plugin_Static_Content::getInstance();' . "\n";
-            $template_content .= 'echo $plugin_obj->renderSingleContent();' . "\n";
-            file_put_contents($template_file, $template_content);
-        }
-
-        return $template_file;
     }
 
     /**
