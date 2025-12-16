@@ -63,8 +63,6 @@ class Djebel_Plugin_Static_Content
         'publish_date' => '',
         'creation_date' => '',
         'last_modified' => '',
-        'etag' => '',
-        'last_modified_header' => '',
     ];
 
     public function init()
@@ -423,14 +421,16 @@ class Djebel_Plugin_Static_Content
 
         $post_rec = $post_res_obj->data();
 
-        // Handle HTTP caching headers (ETag and Last-Modified)
-        // Check conditional request headers and send 304 if content unchanged
-        $cache_params = [
-            'etag' => empty($post_rec['etag']) ? '' : $post_rec['etag'],
-            'last_modified' => empty($post_rec['last_modified_header']) ? '' : $post_rec['last_modified_header'],
+        // Hook after post loaded - pass last_modified and file for caching
+        $last_modified = empty($post_rec['last_modified']) ? '' : $post_rec['last_modified'];
+        $file = empty($post_rec['file']) ? '' : $post_rec['file'];
+
+        $post_load_ctx = [
+            'last_modified' => $last_modified,
+            'file' => $file,
         ];
 
-        $this->applyHttpCacheHeaders($cache_params);
+        Dj_App_Hooks::doAction('app.plugin.static_content.post_load_post', $post_load_ctx);
 
         // Publish page data for SEO plugin (maintains separation of concerns)
         // Get default fields (allows other plugins to extend via filter)
@@ -525,46 +525,12 @@ class Djebel_Plugin_Static_Content
             return "<!--\nNo content available\n-->";
         }
 
-        // Generate cache headers for listing page
-        // ETag: Hash of all individual post ETags (changes when any post changes)
-        // Last-Modified: Most recent post modification time
-        $listing_etags = [];
-        $latest_timestamp = 0;
-
-        foreach ($content_data as $post_rec) {
-            $post_etag = empty($post_rec['etag']) ? '' : $post_rec['etag'];
-
-            if (!empty($post_etag)) {
-                $listing_etags[] = $post_etag;
-            }
-
-            $post_last_modified = empty($post_rec['last_modified_header']) ? '' : $post_rec['last_modified_header'];
-
-            if (!empty($post_last_modified)) {
-                // HTTP headers are always GMT - use strtotime directly
-                $post_timestamp = strtotime($post_last_modified);
-
-                if (!empty($post_timestamp) && $post_timestamp > $latest_timestamp) {
-                    $latest_timestamp = $post_timestamp;
-                }
-            }
-        }
-
-        $listing_etag_input = implode('-', $listing_etags);
-        $listing_etag = empty($listing_etags) ? '' : Dj_App_Util::generateHash($listing_etag_input, 16);
-
-        $last_modified = '';
-
-        if ($latest_timestamp > 0) {
-            $last_modified = gmdate('D, d M Y H:i:s', $latest_timestamp) . ' GMT';
-        }
-
-        $listing_cache_params = [
-            'etag' => $listing_etag,
-            'last_modified' => $last_modified,
+        // Hook after content loaded - pass most recent last_modified for caching
+        $post_load_ctx = [
+            'files' => $content_data,
         ];
 
-        $this->applyHttpCacheHeaders($listing_cache_params);
+        Dj_App_Hooks::doAction('app.plugin.static_content.post_load_listing', $post_load_ctx);
 
         // @todo move to another method or block for pagination?
         $current_page = empty($plugin_params['page']) ? 1 : $plugin_params['page'];
@@ -725,96 +691,6 @@ class Djebel_Plugin_Static_Content
         }
 
         return $result;
-    }
-
-    /**
-     * Check if client's cached version is still valid (for 304 Not Modified responses)
-     * Compares incoming If-None-Match (ETag) and If-Modified-Since headers
-     * against current content ETag and Last-Modified values
-     *
-     * @param array $params Cache parameters with 'etag' and 'last_modified' keys
-     * @return bool True if content not modified (should send 304), false otherwise
-     */
-    private function isContentNotModified($params)
-    {
-        // Early return: filter out empty values - if nothing left, no cache data
-        $params_filtered = array_filter($params);
-
-        if (empty($params_filtered)) {
-            return false;
-        }
-
-        $etag = empty($params['etag']) ? '' : $params['etag'];
-        $last_modified = empty($params['last_modified']) ? '' : $params['last_modified'];
-
-        // Check If-None-Match header (ETag comparison) - takes precedence per RFC 7232
-        if (!empty($_SERVER['HTTP_IF_NONE_MATCH']) && !empty($etag)) {
-            // Strip quotes if present (ETags may be quoted per RFC 7232)
-            $if_none_match = trim($_SERVER['HTTP_IF_NONE_MATCH'], '"');
-            $etag_clean = trim($etag, '"');
-
-            if ($if_none_match === $etag_clean) {
-                return true;
-            }
-        }
-
-        // Check If-Modified-Since header (timestamp comparison)
-        if (!empty($_SERVER['HTTP_IF_MODIFIED_SINCE']) && !empty($last_modified)) {
-            // HTTP headers are always GMT - use strtotime directly (not localized util)
-            $if_modified_timestamp = strtotime($_SERVER['HTTP_IF_MODIFIED_SINCE']);
-
-            if (empty($if_modified_timestamp)) {
-                return false;
-            }
-
-            $last_modified_timestamp = strtotime($last_modified);
-
-            if (empty($last_modified_timestamp)) {
-                return false;
-            }
-
-            // Content unchanged if not modified since client's cached version
-            if ($last_modified_timestamp <= $if_modified_timestamp) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Apply HTTP cache headers and handle 304 responses
-     *
-     * @param array $params Cache parameters with 'etag' and 'last_modified' keys
-     * @return void
-     */
-    private function applyHttpCacheHeaders($params)
-    {
-        $req_obj = Dj_App_Request::getInstance();
-        $etag = empty($params['etag']) ? '' : $params['etag'];
-        $last_modified = empty($params['last_modified']) ? '' : $params['last_modified'];
-
-        if ($this->isContentNotModified($params)) {
-            if (!empty($etag)) {
-                $req_obj->setHeader('ETag', sprintf('"%s"', $etag));
-            }
-
-            if (!empty($last_modified)) {
-                $req_obj->setHeader('Last-Modified', $last_modified);
-            }
-
-            $req_obj->setResponseCode(304);
-            $req_obj->outputHeaders();
-            Dj_App::exit();
-        }
-
-        if (!empty($etag)) {
-            $req_obj->setHeader('ETag', sprintf('"%s"', $etag));
-        }
-
-        if (!empty($last_modified)) {
-            $req_obj->setHeader('Last-Modified', $last_modified);
-        }
     }
 
     private function generateContentData($params = [])
@@ -1179,19 +1055,6 @@ class Djebel_Plugin_Static_Content
         // Get default fields to ensure all fields are present
         $defaults = $this->getDefaultDataFields();
 
-        // Generate ETag and Last-Modified headers for HTTP caching
-        // ETag format: hash_id + file modification time for uniqueness
-        // Last-Modified: RFC 7231 compliant HTTP date format
-        $file_mtime = file_exists($file) ? filemtime($file) : 0;
-        $last_modified_header = '';
-
-        if ($file_mtime > 0) {
-            $last_modified_header = gmdate('D, d M Y H:i:s', $file_mtime) . ' GMT';
-        }
-
-        $etag_input = $hash_id . ':' . $file_mtime;
-        $etag = Dj_App_Util::generateHash($etag_input, 16);
-
         // Build override fields that take precedence over defaults and meta
         $override_fields = [
             'hash_id' => $hash_id,
@@ -1200,8 +1063,6 @@ class Djebel_Plugin_Static_Content
             'content' => $html_content,
             'status' => $status,
             'file' => $file,
-            'etag' => $etag,
-            'last_modified_header' => $last_modified_header,
         ];
 
         // Build data by merging: defaults -> meta -> override fields
