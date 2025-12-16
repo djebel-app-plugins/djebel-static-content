@@ -422,13 +422,8 @@ class Djebel_Plugin_Static_Content
         $post_rec = $post_res_obj->data();
 
         // Hook after post loaded - pass last_modified and file for caching
-        // Fallback to creation_date if last_modified is empty
+        // Note: fallback from creation_date to last_modified happens in loadPostFromMarkdown()
         $last_modified = empty($post_rec['last_modified']) ? '' : $post_rec['last_modified'];
-
-        if (empty($last_modified)) {
-            $last_modified = empty($post_rec['creation_date']) ? '' : $post_rec['creation_date'];
-        }
-
         $file = empty($post_rec['file']) ? '' : $post_rec['file'];
 
         $post_load_ctx = [
@@ -1073,6 +1068,11 @@ class Djebel_Plugin_Static_Content
 
         // Build data by merging: defaults -> meta -> override fields
         $data = array_merge($defaults, $meta, $override_fields);
+
+        // Fallback: use creation_date if last_modified is empty
+        if (empty($data['last_modified']) && !empty($data['creation_date'])) {
+            $data['last_modified'] = $data['creation_date'];
+        }
 
         $res_obj->status(true);
         $res_obj->data($data);
