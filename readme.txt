@@ -142,7 +142,130 @@ djebel-static-content.collections[pages].use_content_slugs = 1
 
 Pagination uses the query parameter `djebel_plugin_static_content_page`.
 
+## Site Content Feature
+
+Serve static pages from a `site_content/` folder, allowing simple themes with just an `index.php`.
+
+### How It Works
+
+1. Request comes in (e.g., `/contact`)
+2. Theme looks for `pages/contact.php` (not found)
+3. 404 hook fires
+4. Plugin checks `site_content/contact.{md, html, php}` (configurable order)
+5. Plugin finds theme template:
+   - `{theme}/templates/contact.php` (specific)
+   - `{theme}/templates/{parent}.php` (for nested paths)
+   - `{theme}/index.php` (fallback)
+6. Content rendered through template
+
+### Folder Structure
+
+```
+dj-content/
+├── data/app/plugins/djebel-static-content/
+│   └── site_content/           # Site pages
+│       ├── home.md
+│       ├── contact.md
+│       ├── about.md
+│       └── docs/
+│           └── intro.md        # Accessible at /docs/intro
+├── themes/{theme}/
+│   ├── index.php               # Main layout (fallback template)
+│   └── templates/              # Optional page-specific templates
+│       ├── contact.php
+│       └── docs.php            # For /docs/* pages
+```
+
+### Configuration
+
+```ini
+[plugins]
+; Directory name (default: site_content)
+djebel-static-content.site_content_dir = site_content
+
+; File extension priority (default: php,html,md)
+djebel-static-content.content.file_ext = php,html,md
+
+; Enable/disable feature (default: true)
+djebel-static-content.site_content_enabled = 1
+```
+
+### Supported File Types
+
+- `.php` - Executed and output captured
+- `.html` - Served directly
+- `.md` - Raw content passed to `site_content` filter (other plugins can convert)
+
+### Hooks
+
+| Hook | Type | Purpose |
+|------|------|---------|
+| `app.plugin.static_content.site_content` | Filter | Post-process content |
+| `app.plugin.static_content.site_content_file` | Filter | Modify content file path |
+| `app.plugin.static_content.content.file_ext` | Filter | Reorder/add/remove extensions |
+
+### Hook Examples
+
+**Reorder extensions (markdown first):**
+```php
+$obj = My_Plugin::getInstance();
+Dj_App_Hooks::addFilter('app.plugin.static_content.content.file_ext', [ $obj, 'filterFileExt', ]);
+
+// In your class:
+public function filterFileExt($extensions, $ctx)
+{
+    $result = [ 'md', 'html', 'php', ];
+
+    return $result;
+}
+```
+
+**Add custom extension:**
+```php
+public function filterFileExt($extensions, $ctx)
+{
+    $extensions[] = 'txt';
+
+    return $extensions;
+}
+```
+
+**Remove PHP support (security):**
+```php
+public function filterFileExt($extensions, $ctx)
+{
+    $filtered = [];
+
+    foreach ($extensions as $ext) {
+        if ($ext === 'php') {
+            continue;
+        }
+
+        $filtered[] = $ext;
+    }
+
+    return $filtered;
+}
+```
+
+**Per-page customization:**
+```php
+public function filterFileExt($extensions, $ctx)
+{
+    $page = empty($ctx['page']) ? '' : $ctx['page'];
+
+    // Only allow markdown for docs section
+    if (strpos($page, 'docs/') === 0) {
+        $result = [ 'md', ];
+
+        return $result;
+    }
+
+    return $extensions;
+}
+```
+
 ## Requirements
 
 - PHP 7.4+
-- djebel-markdown plugin
+- djebel-markdown plugin (optional, for .md file conversion)
