@@ -128,7 +128,7 @@ class Djebel_Plugin_Static_Content
                 $render_params = [ 'content_id' => $content_id, ];
                 $rendered = $this->renderSingleContent($render_params);
 
-                if (!empty($rendered) && strpos($rendered, '<!--') !== 0) {
+                if (!empty($rendered) && (strpos($rendered, '<!--') !== 0)) {
                     $page_obj->setContent($rendered);
                     $res_obj->status(true);
 
@@ -305,6 +305,51 @@ class Djebel_Plugin_Static_Content
         if (empty($file)) {
             return '';
         }
+
+        // Security: Use realpath() to get canonical path
+        // - Checks if file exists (returns false if not)
+        // - Resolves symlinks to actual location (prevents symlink attacks)
+        // - Normalizes ../ sequences (prevents directory traversal)
+        $real_path = realpath($file);
+
+        if (empty($real_path)) {
+            return '';
+        }
+
+        // Security: Verify file is within allowed directories
+        // Must use realpath() on allowed dirs too - compare canonical paths only
+        // This ensures symlinks in either path can't bypass the security check
+        // Early return pattern: check most common dir first, skip second check if found
+        $is_allowed = false;
+        $site_content_dir = $this->getSiteContentDir();
+
+        if (!empty($site_content_dir)) {
+            $real_site_content_dir = realpath($site_content_dir);
+
+            if (!empty($real_site_content_dir) && (strpos($real_path, $real_site_content_dir) === 0)) {
+                $is_allowed = true;
+            }
+        }
+
+        // Only check data_dir if not already allowed (skip realpath call)
+        if (!$is_allowed) {
+            $data_dir = Dj_App_Util::getContentDataDir([ 'plugin' => $this->plugin_id, ]);
+
+            if (!empty($data_dir)) {
+                $real_data_dir = realpath($data_dir);
+
+                if (!empty($real_data_dir) && (strpos($real_path, $real_data_dir) === 0)) {
+                    $is_allowed = true;
+                }
+            }
+        }
+
+        if (!$is_allowed) {
+            return '';
+        }
+
+        // Use canonical path for all subsequent operations
+        $file = $real_path;
 
         // Use passed extension or calculate if not provided
         if (!empty($params['ext'])) {
@@ -506,8 +551,12 @@ class Djebel_Plugin_Static_Content
 
             <?php if ($show_date || $show_author || $show_category): ?>
                 <div class="djebel-plugin-static-content-post-single-meta">
-                    <?php if ($show_date && !empty($post_rec['creation_date'])): ?>
-                        <span><?php echo Djebel_App_HTML::encodeEntities(date('F j, Y', strtotime($post_rec['creation_date']))); ?></span>
+                        <?php if ($show_date && !empty($post_rec['creation_date'])):
+                            $date_timestamp = Dj_App_Util::strtotime($post_rec['creation_date']);
+                            $formatted_date = date('F j, Y', $date_timestamp);
+                            $date_escaped = Djebel_App_HTML::encodeEntities($formatted_date);
+                        ?>
+                        <span><?php echo $date_escaped; ?></span>
                     <?php endif; ?>
 
                     <?php if ($show_author && !empty($post_rec['author'])): ?>
@@ -620,8 +669,12 @@ class Djebel_Plugin_Static_Content
 
                     <?php if ($show_date || $show_author || $show_category): ?>
                         <div class="djebel-plugin-static-content-post-meta">
-                            <?php if ($show_date && !empty($post_rec['creation_date'])): ?>
-                                <span><?php echo Djebel_App_HTML::encodeEntities(date('F j, Y', strtotime($post_rec['creation_date']))); ?></span>
+                            <?php if ($show_date && !empty($post_rec['creation_date'])):
+                                $date_timestamp = Dj_App_Util::strtotime($post_rec['creation_date']);
+                                $formatted_date = date('F j, Y', $date_timestamp);
+                                $date_escaped = Djebel_App_HTML::encodeEntities($formatted_date);
+                            ?>
+                                <span><?php echo $date_escaped; ?></span>
                             <?php endif; ?>
 
                             <?php if ($show_author && !empty($post_rec['author'])): ?>
@@ -764,6 +817,13 @@ class Djebel_Plugin_Static_Content
         $options_obj = Dj_App_Options::getInstance();
         $use_slugs = $options_obj->isEnabled("plugins.djebel-static-content.{$content_id}." . self::CONFIG_USE_CONTENT_SLUGS);
 
+        // Cheap checks first - calculate params-based values BEFORE disk I/O loops
+        $content_prefix = empty($params['content_prefix']) ? '' : $params['content_prefix'];
+        $include_content_prefix_param = empty($params['include_content_prefix']) ? '' : $params['include_content_prefix'];
+        $include_content_prefix = !Dj_App_Util::isDisabled($include_content_prefix_param);
+        $content_prefix_dir_param = empty($params['content_prefix_dir']) ? '' : $params['content_prefix_dir'];
+        $content_prefix_dir = Dj_App_Util::isEnabled($content_prefix_dir_param);
+
         foreach ($scan_dirs as $scan_dir) {
             if (!is_dir($scan_dir)) {
                 continue;
@@ -771,11 +831,12 @@ class Djebel_Plugin_Static_Content
 
             // Normalize scan_dir once per directory (optimization - avoid repeated calls in loop)
             $scan_dir_normalized = Dj_App_File_Util::normalizePath($scan_dir);
+            $scan_dir_len = strlen($scan_dir_normalized);
 
             $md_files = $this->scanMarkdownFiles($scan_dir);
 
             foreach ($md_files as $file) {
-                $content_res_obj = $this->loadPostFromMarkdown(['file' => $file, 'content_id' => $content_id]);
+                $content_res_obj = $this->loadPostFromMarkdown([ 'file' => $file, 'content_id' => $content_id, ]);
 
                 if ($content_res_obj->isError()) {
                     continue;
@@ -783,9 +844,6 @@ class Djebel_Plugin_Static_Content
 
                 $content_rec = $content_res_obj->data();
                 $hash_id = $content_rec['hash_id'];
-                $content_prefix = !empty($params['content_prefix']) ? $params['content_prefix'] : '';
-                $include_content_prefix_param = isset($params['include_content_prefix']) ? $params['include_content_prefix'] : '';
-                $include_content_prefix = !Dj_App_Util::isDisabled($include_content_prefix_param);
 
                 // Optional: Append file's relative directory to content_prefix in URL (content_prefix_dir=1)
                 // This allows preserving directory structure from markdown files in the final URLs
@@ -794,15 +852,13 @@ class Djebel_Plugin_Static_Content
                 //   Without content_prefix_dir: /web_path/docs/latest/auth-abc123
                 //   With content_prefix_dir=1:  /web_path/docs/latest/api/v2/auth-abc123
                 $rel_dir = '';
-                $content_prefix_dir_param = isset($params['content_prefix_dir']) ? $params['content_prefix_dir'] : '';
-                $content_prefix_dir = Dj_App_Util::isEnabled($content_prefix_dir_param);
 
                 if ($content_prefix_dir) {
                     $file_dir = dirname($file);
                     $file_dir_normalized = Dj_App_File_Util::normalizePath($file_dir);
 
                     if (strpos($file_dir_normalized, $scan_dir_normalized) === 0) {
-                        $rel_dir = substr($file_dir_normalized, strlen($scan_dir_normalized));
+                        $rel_dir = substr($file_dir_normalized, $scan_dir_len);
                         $rel_dir = Dj_App_Util::removeSlash($rel_dir, Dj_App_Util::FLAG_BOTH);
                     }
                 }
@@ -874,7 +930,7 @@ class Djebel_Plugin_Static_Content
         if (!empty($config_dirs)) {
             if (is_string($config_dirs)) {
                 $config_dirs = explode(',', $config_dirs);
-                $config_dirs = array_map('trim', $config_dirs);
+                $config_dirs = Dj_App_String_Util::trim($config_dirs);
             }
 
             if (is_array($config_dirs)) {
@@ -1174,7 +1230,7 @@ class Djebel_Plugin_Static_Content
 
         if ($include_content_prefix) {
             // Get content_prefix (shortcode > settings > content_id default)
-            $content_prefix = !empty($data['content_prefix']) ? $data['content_prefix'] : '';
+            $content_prefix = empty($data['content_prefix']) ? '' : $data['content_prefix'];
 
             if (empty($content_prefix)) {
                 if (!empty($data['content_id'])) {
@@ -1394,23 +1450,53 @@ class Djebel_Plugin_Static_Content
         $val_b = false;
 
         if ($field === 'file') {
-            $val_a = isset($a['file']) ? basename($a['file']) : false;
-            $val_b = isset($b['file']) ? basename($b['file']) : false;
+            if (isset($a['file'])) {
+                $val_a = basename($a['file']);
+            }
+
+            if (isset($b['file'])) {
+                $val_b = basename($b['file']);
+            }
         } elseif ($field === 'creation_date') {
-            $val_a = isset($a['creation_date']) ? Dj_App_Util::strtotime($a['creation_date']) : false;
-            $val_b = isset($b['creation_date']) ? Dj_App_Util::strtotime($b['creation_date']) : false;
+            if (isset($a['creation_date'])) {
+                $val_a = Dj_App_Util::strtotime($a['creation_date']);
+            }
+
+            if (isset($b['creation_date'])) {
+                $val_b = Dj_App_Util::strtotime($b['creation_date']);
+            }
         } elseif ($field === 'last_modified') {
-            $val_a = isset($a['last_modified']) ? Dj_App_Util::strtotime($a['last_modified']) : false;
-            $val_b = isset($b['last_modified']) ? Dj_App_Util::strtotime($b['last_modified']) : false;
+            if (isset($a['last_modified'])) {
+                $val_a = Dj_App_Util::strtotime($a['last_modified']);
+            }
+
+            if (isset($b['last_modified'])) {
+                $val_b = Dj_App_Util::strtotime($b['last_modified']);
+            }
         } elseif ($field === 'publish_date') {
-            $val_a = isset($a['publish_date']) ? Dj_App_Util::strtotime($a['publish_date']) : false;
-            $val_b = isset($b['publish_date']) ? Dj_App_Util::strtotime($b['publish_date']) : false;
+            if (isset($a['publish_date'])) {
+                $val_a = Dj_App_Util::strtotime($a['publish_date']);
+            }
+
+            if (isset($b['publish_date'])) {
+                $val_b = Dj_App_Util::strtotime($b['publish_date']);
+            }
         } elseif ($field === 'title') {
-            $val_a = isset($a['title']) ? $a['title'] : false;
-            $val_b = isset($b['title']) ? $b['title'] : false;
+            if (isset($a['title'])) {
+                $val_a = $a['title'];
+            }
+
+            if (isset($b['title'])) {
+                $val_b = $b['title'];
+            }
         } elseif ($field === 'sort_order') {
-            $val_a = isset($a['sort_order']) ? $a['sort_order'] : false;
-            $val_b = isset($b['sort_order']) ? $b['sort_order'] : false;
+            if (isset($a['sort_order'])) {
+                $val_a = $a['sort_order'];
+            }
+
+            if (isset($b['sort_order'])) {
+                $val_b = $b['sort_order'];
+            }
         }
 
         if ($val_a && !$val_b) {
@@ -1466,7 +1552,9 @@ class Djebel_Plugin_Static_Content
             $link_text = '';
 
             if ($has_brackets) {
-                $link_text = substr($content, $bracket_start + 1, $pos - $bracket_start - 1);
+                $link_text_start = $bracket_start + 1;
+                $link_text_len = $pos - $bracket_start - 1;
+                $link_text = substr($content, $link_text_start, $link_text_len);
             }
 
             // Parse forward to get hash_id (find closing paren)
@@ -1478,7 +1566,8 @@ class Djebel_Plugin_Static_Content
                 continue;
             }
 
-            $hash_id = substr($content, $ref_start, $paren_end - $ref_start);
+            $hash_id_len = $paren_end - $ref_start;
+            $hash_id = substr($content, $ref_start, $hash_id_len);
 
             // Validate hash_id: length check first (fastest), then alphanumeric
             $hash_len = strlen($hash_id);
