@@ -365,8 +365,24 @@ class Djebel_Plugin_Static_Content
             ob_start();
             include $file;
             $content = ob_get_clean();
+        } elseif ($ext === 'md') {
+            // Markdown: parse frontmatter and convert to HTML
+            $ctx = ['file' => $file];
+            $parse_res = Dj_App_Hooks::applyFilter('app.plugins.markdown.parse_front_matter', '', $ctx);
+
+            if (is_object($parse_res) && $parse_res->isSuccess()) {
+                $content = $parse_res->content;
+                $ctx['meta'] = $parse_res->meta;
+
+                // Convert markdown to HTML
+                $content = Dj_App_Hooks::applyFilter('app.plugins.markdown.convert_markdown', $content, $ctx);
+            }
         } else {
-            $content = file_get_contents($file);
+            $read_res = Dj_App_File_Util::read($file);
+
+            if ($read_res->isSuccess()) {
+                $content = $read_res->data();
+            }
         }
 
         $content = Dj_App_String_Util::trim($content);
@@ -376,7 +392,7 @@ class Djebel_Plugin_Static_Content
             'ext' => $ext,
         ];
 
-        // Markdown conversion handled by markdown plugin via app.page.content filter
+        // Additional content filters
         $content = Dj_App_Hooks::applyFilter('app.page.content', $content, $ctx);
 
         return $content;
@@ -756,6 +772,14 @@ class Djebel_Plugin_Static_Content
         $cache_disabled = $options_obj->isDisabled("plugins.djebel-static-content.{$content_id}.cache")
                 || $options_obj->isDisabled("plugins.djebel-static-content.cache");
 
+        // Request param to bypass cache: ?dj_cache=0
+        $req_obj = Dj_App_Request::getInstance();
+        $cache_param = $req_obj->get('dj_cache');
+
+        if (Dj_App_Util::isDisabled($cache_param)) {
+            $cache_disabled = true;
+        }
+
         $cache_enabled = !$cache_disabled;
 
         // Check per-collection cache TTL first, fall back to global, then default (4 hours)
@@ -1051,6 +1075,107 @@ class Djebel_Plugin_Static_Content
     }
 
     /**
+     * Inject prepend/append content from .config/ directory
+     * Loads raw markdown from config files and merges with main content
+     * Files checked: .config/prepend_content.md, .config/append_content.md
+     *
+     * @param array $params {
+     *     @type string $content Main post content (raw markdown)
+     *     @type string $content_id Collection ID (e.g., 'blog')
+     * }
+     * @return string Content with prepend/append injected
+     */
+    private function injectConfigContent($params = [])
+    {
+        $content = empty($params['content']) ? '' : $params['content'];
+        $content_id = empty($params['content_id']) ? 'default' : $params['content_id'];
+
+        // Cheap check: option to disable feature (per-collection or global)
+        $options_obj = Dj_App_Options::getInstance();
+        $is_disabled = $options_obj->isDisabled("plugins.djebel-static-content.{$content_id}.inject_config_content")
+            || $options_obj->isDisabled('plugins.djebel-static-content.inject_config_content');
+
+        if ($is_disabled) {
+            return $content;
+        }
+
+        // Cache config dir paths per content_id (avoid repeated filesystem checks)
+        static $config_dirs = [];
+
+        if (isset($config_dirs[$content_id])) {
+            $config_dir = $config_dirs[$content_id];
+
+            // Empty string means we checked before and .config doesn't exist
+            if (empty($config_dir)) {
+                return $content;
+            }
+        } else {
+            $content_dir = $this->getDataDirectory($params);
+
+            // Cheap check: empty result means no valid directory
+            if (empty($content_dir)) {
+                $config_dirs[$content_id] = '';
+                return $content;
+            }
+
+            $config_dir = $content_dir . '/.config';
+
+            // Filesystem check: .config dir must exist
+            if (!is_dir($config_dir)) {
+                $config_dirs[$content_id] = '';
+                return $content;
+            }
+
+            // Cache the valid config dir path
+            $config_dirs[$content_id] = $config_dir;
+        }
+
+        // Load prepend content
+        $prepend_file = $config_dir . '/prepend_content.md';
+        $prepend_content = $this->loadConfigContentFile($prepend_file);
+
+        // Load append content
+        $append_file = $config_dir . '/append_content.md';
+        $append_content = $this->loadConfigContentFile($append_file);
+
+        // Merge: prepend + content + append
+        if (!empty($prepend_content)) {
+            $content = $prepend_content . "\n\n" . $content;
+        }
+
+        if (!empty($append_content)) {
+            $content = $content . "\n\n---\n\n" . $append_content;
+        }
+
+        return $content;
+    }
+
+    /**
+     * Load raw content from config file (strips frontmatter)
+     *
+     * @param string $file Path to config file
+     * @return string Raw markdown content, empty if file doesn't exist
+     */
+    private function loadConfigContentFile($file)
+    {
+        if (empty($file) || !file_exists($file)) {
+            return '';
+        }
+
+        $ctx = ['file' => $file];
+        $parse_res = Dj_App_Hooks::applyFilter('app.plugins.markdown.parse_front_matter', '', $ctx);
+
+        if (!is_object($parse_res) || $parse_res->isError()) {
+            return '';
+        }
+
+        $content = $parse_res->content;
+        $content = Dj_App_String_Util::trim($content);
+
+        return $content;
+    }
+
+    /**
      * Load post from markdown file
      * @param array $params
      * @return Dj_App_Result
@@ -1108,6 +1233,14 @@ class Djebel_Plugin_Static_Content
         $html_content = '';
 
         if ($full) {
+            // Inject prepend/append content from .config/ before markdown conversion
+            $inject_params = [
+                'content' => $content,
+                'content_id' => $content_id,
+            ];
+
+            $content = $this->injectConfigContent($inject_params);
+
             $html_content = Dj_App_Hooks::applyFilter('app.plugins.markdown.convert_markdown', $content, $ctx);
             $html_content = empty($html_content) ? $content : $html_content;
         }
