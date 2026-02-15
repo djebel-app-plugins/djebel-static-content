@@ -30,7 +30,7 @@ class Djebel_Plugin_Static_Content
         self::STATUS_PUBLISHED,
     ];
 
-    public const DEFAULT_RECORDS_PER_PAGE = 10;
+    public const DEFAULT_RECORDS_PER_PAGE = 25;
 
     // Content linking constants for max performance
     public const LINK_PREFIX = '(@dj:';
@@ -446,26 +446,37 @@ class Djebel_Plugin_Static_Content
      * Get records per page for pagination
      * Checks: params -> options -> default constant
      *
-     * @param array $params Optional params with 'per_page' key
+     * @param array $params Optional params with 'results_per_page' key
      * @return int
      */
-    public function getPerPage($params = [])
+    public function getResultsPerPage($params = [])
     {
-        // Check params first
-        if (!empty($params['per_page'])) {
-            $per_page = $params['per_page'];
+        // Check params first (results_per_page, fall back to per_page for backward compat)
+        $per_page_param = empty($params['results_per_page']) ? '' : $params['results_per_page'];
+
+        if (empty($per_page_param)) {
+            $per_page_param = empty($params['per_page']) ? '' : $params['per_page'];
+        }
+
+        if (!empty($per_page_param)) {
+            $per_page = $per_page_param;
             $per_page = (int) $per_page;
-            $per_page = Dj_App_Hooks::applyFilter('app.plugin.static_content.per_page', $per_page, $params);
+            $per_page = Dj_App_Hooks::applyFilter('app.plugin.static_content.results_per_page', $per_page, $params);
 
             return $per_page;
         }
 
         // Check options
         $options_obj = Dj_App_Options::getInstance();
-        $per_page = $options_obj->get('plugins.djebel-static-content.per_page');
+        $per_page = $options_obj->get('plugins.djebel-static-content.results_per_page');
+
+        if (empty($per_page)) {
+            $per_page = $options_obj->get('plugins.djebel-static-content.per_page');
+        }
+
         $per_page = empty($per_page) ? self::DEFAULT_RECORDS_PER_PAGE : $per_page;
         $per_page = (int) $per_page;
-        $per_page = Dj_App_Hooks::applyFilter('app.plugin.static_content.per_page', $per_page, $params);
+        $per_page = Dj_App_Hooks::applyFilter('app.plugin.static_content.results_per_page', $per_page, $params);
 
         return $per_page;
     }
@@ -633,7 +644,7 @@ class Djebel_Plugin_Static_Content
         $current_page = (int) $current_page;
         $current_page = max(1, $current_page);
 
-        $per_page = $this->getPerPage($params);
+        $per_page = $this->getResultsPerPage($params);
         $total_posts = count($content_data);
         $total_pages = ceil($total_posts / $per_page);
         $offset = ($current_page - 1) * $per_page;
@@ -834,13 +845,11 @@ class Djebel_Plugin_Static_Content
             $scan_dir_len = strlen($scan_dir_normalized);
 
             $md_files = $this->scanMarkdownFiles($scan_dir);
-            error_log(":::TMP_DEBUG static_content scan_dir=$scan_dir found=" . count($md_files) . " files=" . implode(',', array_map('basename', $md_files))); // :::TMP_DEBUG
 
             foreach ($md_files as $file) {
                 $content_res_obj = $this->loadPostFromMarkdown([ 'file' => $file, 'content_id' => $content_id, ]);
 
                 if ($content_res_obj->isError()) {
-                    error_log(":::TMP_DEBUG static_content SKIP file=$file msg=" . $content_res_obj->msg); // :::TMP_DEBUG
                     continue;
                 }
 
