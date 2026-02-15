@@ -705,7 +705,7 @@ class Djebel_Plugin_Static_Content
 
             <?php if ($total_pages > 1): ?>
                 <?php
-                $current_url = $req_obj->getRequestUri();
+                $current_url = $req_obj->getRequestUrl();
                 $prev_url = Dj_App_Request::addQueryParam($this->request_param_key . '[page]', $current_page - 1, $current_url);
                 $next_url = Dj_App_Request::addQueryParam($this->request_param_key . '[page]', $current_page + 1, $current_url);
                 ?>
@@ -834,11 +834,13 @@ class Djebel_Plugin_Static_Content
             $scan_dir_len = strlen($scan_dir_normalized);
 
             $md_files = $this->scanMarkdownFiles($scan_dir);
+            error_log(":::TMP_DEBUG static_content scan_dir=$scan_dir found=" . count($md_files) . " files=" . implode(',', array_map('basename', $md_files))); // :::TMP_DEBUG
 
             foreach ($md_files as $file) {
                 $content_res_obj = $this->loadPostFromMarkdown([ 'file' => $file, 'content_id' => $content_id, ]);
 
                 if ($content_res_obj->isError()) {
+                    error_log(":::TMP_DEBUG static_content SKIP file=$file msg=" . $content_res_obj->msg); // :::TMP_DEBUG
                     continue;
                 }
 
