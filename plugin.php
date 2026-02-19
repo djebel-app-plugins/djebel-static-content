@@ -381,7 +381,7 @@ class Djebel_Plugin_Static_Content
             $read_res = Dj_App_File_Util::read($file);
 
             if ($read_res->isSuccess()) {
-                $content = $read_res->data();
+                $content = $read_res->output;
             }
         }
 
