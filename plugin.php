@@ -186,14 +186,14 @@ class Djebel_Plugin_Static_Content
      * CONSISTENCY: Always return same type (array).
      * Empty array on failure, populated array on success.
      *
-     * @param string $path URL path to match
+     * @param string $page_slug URL slug to match
      * @return array Array with 'file' and 'ext' keys if found, empty array otherwise
      */
-    public function findContentFile($path)
+    public function findContentFile($page_slug)
     {
         // Home page: empty or / -> check for 'home' file
-        if (empty($path) || $path === '/') {
-            $path = 'home';
+        if (empty($page_slug) || $page_slug === '/') {
+            $page_slug = 'home';
         }
 
         // Get site_content directory (cached in property)
@@ -213,11 +213,11 @@ class Djebel_Plugin_Static_Content
 
         // Check direct file first (most common case - about.md)
         foreach ($extensions as $ext) {
-            $file_path = $site_content_dir . '/' . $path . '.' . $ext;
+            $candidate_file = $site_content_dir . '/' . $page_slug . '.' . $ext;
 
-            if (file_exists($file_path)) {
+            if (file_exists($candidate_file)) {
                 $result = [
-                    'file' => $file_path,
+                    'file' => $candidate_file,
                     'ext' => $ext,
                 ];
 
@@ -226,20 +226,20 @@ class Djebel_Plugin_Static_Content
         }
 
         // Home page only checks home.* files, no directory fallback
-        if ($path === 'home') {
+        if ($page_slug === 'home') {
             return [];
         }
 
         // Check index files only if directory exists (fallback - about/index.md)
-        $path_dir = $site_content_dir . '/' . $path;
+        $page_dir = $site_content_dir . '/' . $page_slug;
 
-        if (is_dir($path_dir)) {
+        if (is_dir($page_dir)) {
             foreach ($extensions as $ext) {
-                $file_path = $path_dir . '/index.' . $ext;
+                $candidate_file = $page_dir . '/index.' . $ext;
 
-                if (file_exists($file_path)) {
+                if (file_exists($candidate_file)) {
                     $result = [
-                        'file' => $file_path,
+                        'file' => $candidate_file,
                         'ext' => $ext,
                     ];
 
@@ -310,9 +310,9 @@ class Djebel_Plugin_Static_Content
         // - Checks if file exists (returns false if not)
         // - Resolves symlinks to actual location (prevents symlink attacks)
         // - Normalizes ../ sequences (prevents directory traversal)
-        $real_path = realpath($file);
+        $real_file = realpath($file);
 
-        if (empty($real_path)) {
+        if (empty($real_file)) {
             return '';
         }
 
@@ -326,7 +326,7 @@ class Djebel_Plugin_Static_Content
         if (!empty($site_content_dir)) {
             $real_site_content_dir = realpath($site_content_dir);
 
-            if (!empty($real_site_content_dir) && (strpos($real_path, $real_site_content_dir) === 0)) {
+            if (!empty($real_site_content_dir) && (strpos($real_file, $real_site_content_dir) === 0)) {
                 $is_allowed = true;
             }
         }
@@ -338,7 +338,7 @@ class Djebel_Plugin_Static_Content
             if (!empty($data_dir)) {
                 $real_data_dir = realpath($data_dir);
 
-                if (!empty($real_data_dir) && (strpos($real_path, $real_data_dir) === 0)) {
+                if (!empty($real_data_dir) && (strpos($real_file, $real_data_dir) === 0)) {
                     $is_allowed = true;
                 }
             }
@@ -349,7 +349,7 @@ class Djebel_Plugin_Static_Content
         }
 
         // Use canonical path for all subsequent operations
-        $file = $real_path;
+        $file = $real_file;
 
         // Use passed extension or calculate if not provided
         if (!empty($params['ext'])) {
@@ -1497,13 +1497,13 @@ class Djebel_Plugin_Static_Content
             return $page_file_candidates;
         }
 
-        $first_file_path = reset($page_file_candidates);
+        $first_file = reset($page_file_candidates);
 
-        if (empty($first_file_path)) {
+        if (empty($first_file)) {
             return $page_file_candidates;
         }
 
-        $parent_dir_file = dirname($first_file_path);
+        $parent_dir_file = dirname($first_file);
         $parent_dir_file = Dj_App_Util::removeSlash($parent_dir_file);
 
         // Check template_file first - highest priority if explicitly provided
@@ -1524,7 +1524,7 @@ class Djebel_Plugin_Static_Content
         if (!empty($url_contains) && is_array($url_contains)) {
             // Get relative web path (URL after web path) for pattern matching
             $req_obj = Dj_App_Request::getInstance();
-            $segments_path = $req_obj->getRelWebPath();
+            $rel_url = $req_obj->getRelWebPath();
 
             // Match segments path against url_contains patterns
             // Using !== false to match pattern anywhere in URL (supports multi-lingual: /en/docs)
@@ -1533,7 +1533,7 @@ class Djebel_Plugin_Static_Content
                     continue;
                 }
 
-                if (strpos($segments_path, $pattern) === false) {
+                if (strpos($rel_url, $pattern) === false) {
                     continue;
                 }
 
@@ -1560,7 +1560,7 @@ class Djebel_Plugin_Static_Content
         }
 
         // Try to extract hash_id or slug from file path (supports both modes)
-        $hash_id = $this->parseHashId([ 'file' => $first_file_path, ]);
+        $hash_id = $this->parseHashId([ 'file' => $first_file, ]);
 
         if (empty($hash_id)) {
             return $page_file_candidates;
