@@ -367,7 +367,7 @@ class Djebel_Plugin_Static_Content
             $content = ob_get_clean();
         } elseif ($ext === 'md') {
             // Markdown: parse frontmatter and convert to HTML
-            $ctx = ['file' => $file];
+            $ctx = ['file' => $file, 'full' => 1, ];
             $parse_res = Dj_App_Hooks::applyFilter('app.plugins.markdown.parse_front_matter', '', $ctx);
 
             if (is_object($parse_res) && $parse_res->isSuccess()) {
@@ -1173,7 +1173,7 @@ class Djebel_Plugin_Static_Content
             return '';
         }
 
-        $ctx = ['file' => $file];
+        $ctx = ['file' => $file, 'full' => 1,];
         $parse_res = Dj_App_Hooks::applyFilter('app.plugins.markdown.parse_front_matter', '', $ctx);
 
         if (!is_object($parse_res) || $parse_res->isError()) {
