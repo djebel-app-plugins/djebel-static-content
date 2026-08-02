@@ -45,7 +45,6 @@ class Djebel_Plugin_Static_Content
     public const CONFIG_USE_CONTENT_SLUGS = 'use_content_slugs';
 
     private $plugin_id = 'djebel-static-content';
-    private $cache_dir = '';
     private $sort_by = 'publish_date';
     private $check_extensions = [ 'md', 'html', 'php', ];
     private $request_param_key = 'djebel_plugin_static_content_data';
@@ -70,8 +69,6 @@ class Djebel_Plugin_Static_Content
 
     public function init()
     {
-        $this->cache_dir = Dj_App_Util::getCoreCacheDir(['plugin' => $this->plugin_id]);
-
         $shortcode_obj = Dj_App_Shortcode::getInstance();
         $shortcode_obj->addShortcode('djebel_static_content', [$this, 'renderContent']);
         $shortcode_obj->addShortcode('djebel_static_content_post', [$this, 'renderSingleContent']);
