@@ -358,6 +358,9 @@ class Djebel_Plugin_Static_Content
         // Load based on file type
         $content = '';
 
+        // Front matter of the file being loaded; stays empty for formats that have none.
+        $content_meta = [];
+
         if ($ext === 'php') {
             ob_start();
             include $file;
@@ -369,7 +372,8 @@ class Djebel_Plugin_Static_Content
 
             if (is_object($parse_res) && $parse_res->isSuccess()) {
                 $content = $parse_res->content;
-                $ctx['meta'] = $parse_res->meta;
+                $content_meta = $parse_res->meta;
+                $ctx['meta'] = $content_meta;
 
                 // Convert markdown to HTML
                 $content = Dj_App_Hooks::applyFilter('app.plugins.markdown.convert_markdown', $content, $ctx);
@@ -384,9 +388,11 @@ class Djebel_Plugin_Static_Content
 
         $content = Dj_App_String_Util::trim($content);
 
+        // The parsed front matter travels with the content it came from.
         $ctx = [
             'file' => $file,
             'ext' => $ext,
+            'meta' => $content_meta,
         ];
 
         // Additional content filters
