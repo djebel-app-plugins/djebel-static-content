@@ -51,6 +51,7 @@ Every markdown file starts with YAML frontmatter between `---` delimiters:
 ```yaml
 ---
 title: Article Title Here
+slug: article-title-here
 summary: One or two sentences describing the article.
 author: Djebel Team
 creation_date: 2026-02-15 14:00:00
@@ -74,7 +75,7 @@ hash: 40471b3535bd
 | `status` | Yes | `published` or `draft` |
 | `hash` | Recommended | 12-char hex identifier for URLs |
 | `publish_date` | Optional | Scheduled publication date. Falls back to `creation_date` |
-| `slug` | Optional | Custom URL slug. Auto-generated from filename if omitted |
+| `slug` | Recommended | Custom URL slug. Auto-generated from the filename if omitted — define it so a file rename doesn't change the URL |
 | `sort_order` | Optional | Numeric sort order (default: 0) |
 | `meta_title` | Optional | SEO title (falls back to `title`) |
 | `meta_keywords` | Optional | SEO keywords |
@@ -177,6 +178,7 @@ File: `dj-content/data/app/plugins/djebel-static-content/blog/2026/02/2026-02-24
 ```markdown
 ---
 title: Building Plugins with Djebel
+slug: building-plugins-with-djebel
 summary: A practical guide to creating your first Djebel plugin, from file structure to hooks and filters.
 author: Djebel Team
 creation_date: 2026-02-24 10:00:00
@@ -217,7 +219,8 @@ Create a new directory in `dj-content/plugins/`, add a `plugin.php`, and registe
 - [ ] Generate hash: `openssl rand -hex 6`
 - [ ] Create filename: `YYYY-MM-DD-descriptive-slug.md`
 - [ ] Place in correct directory: `blog/YYYY/MM/` for blog posts
-- [ ] Add complete frontmatter (title, summary, author, creation_date, category, tags, status, hash)
+- [ ] Add complete frontmatter (title, slug, summary, author, creation_date, category, tags, status, hash)
+- [ ] Define the slug explicitly so a file rename doesn't change the URL
 - [ ] Write H1 title matching frontmatter title
 - [ ] Use H2 sections separated by `---`
 - [ ] Set status to `published` or `draft`

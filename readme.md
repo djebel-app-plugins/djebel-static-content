@@ -94,6 +94,9 @@ sort_order: 10
 
 All fields are optional. `hash` is a 12-char hex id (generate:
 `openssl rand -hex 6`) — it keeps post URLs stable across renames.
+Define `slug` explicitly too: when omitted it is derived from the
+filename, so renaming the file changes the URL. Setting both `slug`
+and `hash` pins the URL for good.
 `meta_title` / `meta_keywords` / `meta_description` are also read and
 published to the SEO plugin.
 
