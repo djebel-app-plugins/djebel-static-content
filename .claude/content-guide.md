@@ -138,6 +138,15 @@ End with actionable next steps:
 Wrap-up content...
 ```
 
+## Formatting
+
+- Do NOT bold (`**word**`) or italicize (`*word*`) words in body text unless the site
+  owner explicitly requests it. Emphasis and large fonts come from headings and
+  subheadings only — if something deserves emphasis, it deserves its own heading or
+  its own sentence.
+- Inline code in backticks (commands, file names, config keys, URLs) is fine — that is
+  code formatting, not emphasis.
+
 ## Content Linking
 
 Link to other content using the `(@dj:hash_id)` syntax:
