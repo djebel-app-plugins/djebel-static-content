@@ -142,10 +142,27 @@ Wrap-up content...
 
 - Do NOT bold (`**word**`) or italicize (`*word*`) words in body text unless the site
   owner explicitly requests it. Emphasis and large fonts come from headings and
-  subheadings only — if something deserves emphasis, it deserves its own heading or
+  subheadings only - if something deserves emphasis, it deserves its own heading or
   its own sentence.
-- Inline code in backticks (commands, file names, config keys, URLs) is fine — that is
+- Inline code in backticks (commands, file names, config keys, URLs) is fine - that is
   code formatting, not emphasis.
+- Use regular dashes (`-`) in content text - never em (—) or en (–) dashes.
+
+## Language
+
+When writing content in a non-English language, phrase it as close to native as
+possible - translate the meaning, not the sentences word for word. If a phrase only
+works in the source language, say the same idea the way a native writer would say it.
+
+## Fact Check (before a post is done)
+
+Self-check every post, in every language, to make sure things are factually correct
+and not invented:
+
+- URLs open the page they claim - verify each link exists, never guess one
+- Commands and their sample outputs are real - run or verified, not made up
+- Product names, tool claims, and technical statements are accurate
+- If something cannot be verified, leave it out
 
 ## Content Linking
 
@@ -230,6 +247,8 @@ Create a new directory in `dj-content/plugins/`, add a `plugin.php`, and registe
 - [ ] Place in correct directory: `blog/YYYY/MM/` for blog posts
 - [ ] Add complete frontmatter (title, slug, summary, author, creation_date, category, tags, status, hash)
 - [ ] Define the slug explicitly so a file rename doesn't change the URL
+- [ ] No bold/italic in body text; regular dashes only (no em/en dashes)
+- [ ] Fact-check: every URL, command, and output is real and verified
 - [ ] Write H1 title matching frontmatter title
 - [ ] Use H2 sections separated by `---`
 - [ ] Set status to `published` or `draft`
