@@ -163,7 +163,7 @@ class Djebel_Plugin_Static_Content
         // Store in Page object with metadata
         $meta = [
             'file' => $content_file,
-            'path' => $full_page,
+            'full_page' => $full_page,
             'ext' => $content_ext,
         ];
 
