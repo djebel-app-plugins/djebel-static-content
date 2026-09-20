@@ -170,7 +170,7 @@ class Djebel_Plugin_Static_Content
         $page_obj->setContent($content, $meta);
 
         $res_obj->status(true);
-        $res_obj->data($meta);
+        $res_obj->meta_info = $meta;
 
         return $res_obj;
     }
@@ -540,7 +540,7 @@ class Djebel_Plugin_Static_Content
             return "<!--\nFailed to load post content\n-->";
         }
 
-        $post_rec = $post_res_obj->data();
+        $post_rec = $post_res_obj->item;
 
         // Hook after post loaded - pass last_modified and file for caching
         // Note: fallback from creation_date to last_modified happens in loadPostFromMarkdown()
@@ -880,7 +880,7 @@ class Djebel_Plugin_Static_Content
                     continue;
                 }
 
-                $content_rec = $content_res_obj->data();
+                $content_rec = $content_res_obj->item;
                 $hash_id = $content_rec['hash_id'];
 
                 // Optional: Append file's relative directory to content_prefix in URL (content_prefix_dir=1)
@@ -1329,7 +1329,7 @@ class Djebel_Plugin_Static_Content
         }
 
         $res_obj->status(true);
-        $res_obj->data($data);
+        $res_obj->item = $data;
 
         return $res_obj;
     }
