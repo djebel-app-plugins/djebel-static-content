@@ -48,7 +48,11 @@ djebel-static-content.pages.use_content_slugs = 1
 - Status support (draft, published) + scheduled publishing via publish_date
 - Pagination, sorting (file, creation_date, last_modified, title, sort_order)
 - Tags and categories; per-page meta for the SEO plugin
-- Prepend/append config content around single posts
+- Prepend/append text around every single post, written once per collection in
+  `{content_id}/.config/prepend_content.md` and `append_content.md`
+- Markdown links that start at the site root (`[contact](/contact)`) get the site's web
+  path when the site runs under a sub-path
+- An optional `featured_image` shown between a single post's title and its text
 - Caching for performance; extensible with hooks and filters
 
 ## Usage
@@ -90,6 +94,7 @@ status: published
 slug: custom-url-slug
 hash: abc123def456
 sort_order: 10
+featured_image: /dj-content/files/images/2025/01/2025-01-20-my-post.webp
 ```
 
 All fields are optional. `hash` is a 12-char hex id (generate:
@@ -117,6 +122,10 @@ djebel-static-content.cache = 1
 djebel-static-content.blog.cache = 0
 djebel-static-content.cache_ttl = 14400
 djebel-static-content.blog.cache_ttl = 3600
+
+; Prepend/append text from .config/ (global and per collection, on by default)
+djebel-static-content.inject_config_content = 0
+djebel-static-content.blog.inject_config_content = 0
 
 ; Sorting: file, creation_date, last_modified, title, sort_order
 djebel-static-content.sort_by = creation_date

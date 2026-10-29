@@ -80,6 +80,7 @@ hash: 40471b3535bd
 | `meta_title` | Optional | SEO title (falls back to `title`) |
 | `meta_keywords` | Optional | SEO keywords |
 | `meta_description` | Optional | SEO description |
+| `featured_image` | Optional | Image shown between the title and the post text, with the title as its alt text: a site path such as `/dj-content/files/images/2026/02/2026-02-15-my-post.webp` (dated like the post), or an `https://` URL. Write it without quotes |
 
 ### Common Categories
 - Configuration
@@ -90,9 +91,11 @@ hash: 40471b3535bd
 
 ### Generating Required Fields
 
-Timestamp:
+Timestamp, in the site's time zone (`[site] timezone` in `app.ini`). The plugin compares
+dates in that zone, so a time taken in another zone can hide a new post as scheduled for
+hours:
 ```bash
-date +"%Y-%m-%d %H:%M:%S"
+TZ=America/Toronto date +"%Y-%m-%d %H:%M:%S"
 ```
 
 Hash (12-char unique identifier):
@@ -138,6 +141,10 @@ End with actionable next steps:
 Wrap-up content...
 ```
 
+The text every post ends with (a call to action, a contact invite) is not written into the
+post. It comes from the collection's `.config/append_content.md` - see
+[Text Added to Every Post](#text-added-to-every-post).
+
 ## Formatting
 
 - Do NOT bold (`**word**`) or italicize (`*word*`) words in body text unless the site
@@ -147,6 +154,9 @@ Wrap-up content...
 - Inline code in backticks (commands, file names, config keys, URLs) is fine - that is
   code formatting, not emphasis.
 - Use regular dashes (`-`) in content text - never em (—) or en (–) dashes.
+- Links to a page on the same site start with `/`: `[contact us](/contact)`. When the site
+  runs under a sub-path, such as a dev or staging copy at `/projects/my-site/`, Djebel adds
+  that path to the link.
 
 ## Language
 
@@ -180,6 +190,47 @@ Read the [Getting Started Guide](@dj:abc123def456)
 ```
 
 The `hash_id` must be 10-15 alphanumeric characters matching the target content's hash.
+
+## Text Added to Every Post
+
+Text that every post in a collection shows, such as a call to action or a disclaimer, is
+written once instead of being copied into each post. It goes in the collection's `.config/`
+folder:
+
+```
+blog/
+    .config/
+        prepend_content.md    <- added before the text of every post
+        append_content.md     <- added after the text of every post
+    2026/10/2026-10-25-my-post.md
+```
+
+Example `blog/.config/append_content.md`:
+
+```markdown
+Questions about this post? [Write to us](/contact).
+```
+
+- Both files are optional. Write plain markdown; front matter is allowed and ignored.
+- Don't open the file with a `# ` heading: like a post's first line, it is taken as a title
+  and dropped. Start with text, or with `##`.
+- The prepended text comes right after the post title, before the first paragraph. The
+  appended text comes after the post's last line, below a horizontal rule (`---`) the plugin
+  adds, so the file does not start with one.
+- The text is added only when a single post is shown. Listings and summaries never show it.
+- `.config/` starts with a dot, so it is never listed as a post.
+- Each collection has its own `.config/`, and each site its own data folder, so a site in
+  another language keeps its own text.
+
+To turn it off, in `app.ini`:
+
+```ini
+[plugins]
+; for one collection
+djebel-static-content.blog.inject_config_content = 0
+; for every collection
+djebel-static-content.inject_config_content = 0
+```
 
 ## Status and Scheduling
 
@@ -241,13 +292,15 @@ Create a new directory in `dj-content/plugins/`, add a `plugin.php`, and registe
 
 ## Quick Creation Checklist
 
-- [ ] Generate timestamp: `date +"%Y-%m-%d %H:%M:%S"`
+- [ ] Generate timestamp in the site's time zone: `TZ=<site timezone> date +"%Y-%m-%d %H:%M:%S"`
 - [ ] Generate hash: `openssl rand -hex 6`
 - [ ] Create filename: `YYYY-MM-DD-descriptive-slug.md`
 - [ ] Place in correct directory: `blog/YYYY/MM/` for blog posts
 - [ ] Add complete frontmatter (title, slug, summary, author, creation_date, category, tags, status, hash)
 - [ ] Define the slug explicitly so a file rename doesn't change the URL
 - [ ] No bold/italic in body text; regular dashes only (no em/en dashes)
+- [ ] No closing call to action in the post; it comes from `.config/append_content.md`
+- [ ] Same-site links start with `/`
 - [ ] Fact-check: every URL, command, and output is real and verified
 - [ ] Write H1 title matching frontmatter title
 - [ ] Use H2 sections separated by `---`

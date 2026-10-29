@@ -62,6 +62,7 @@ class Djebel_Plugin_Static_Content
         'slug' => '',
         'tags' => [],
         'summary' => '',
+        'featured_image' => '',
         'publish_date' => '',
         'creation_date' => '',
         'last_modified' => '',
@@ -75,6 +76,10 @@ class Djebel_Plugin_Static_Content
 
         // Hook into theme's page file candidates to add content template options
         Dj_App_Hooks::addFilter('app.themes.current_theme_page_file_candidates', [$this, 'addPageFileCandidates']);
+
+        // Priority 10, ahead of the default: (@dj:hash_id) links resolve to URLs that already
+        // carry the web path, and must not get it twice.
+        Dj_App_Hooks::addFilter('app.plugins.markdown.pre_process_content', [$this, 'processSiteLinks'], 10);
 
         // Hook into markdown pre-processing for (@dj:hash_id) content links
         Dj_App_Hooks::addFilter('app.plugins.markdown.pre_process_content', [$this, 'processContentLinks']);
@@ -574,6 +579,9 @@ class Djebel_Plugin_Static_Content
         $show_category = $options_obj->isEnabled('plugins.djebel-static-content.show_category');
         $show_tags = $options_obj->isEnabled('plugins.djebel-static-content.show_tags');
 
+        $featured_image_url = empty($post_rec['featured_image_url']) ? '' : $post_rec['featured_image_url'];
+        $featured_image_url_esc = Djebel_App_HTML::escUrl($featured_image_url);
+
         ob_start();
         ?>
         <article class="djebel-plugin-static-content-post-single">
@@ -605,6 +613,10 @@ class Djebel_Plugin_Static_Content
                         <span class="djebel-plugin-static-content-tag"><?php echo Djebel_App_HTML::encodeEntities($tag); ?></span>
                     <?php endforeach; ?>
                 </div>
+            <?php endif; ?>
+
+            <?php if (!empty($featured_image_url_esc)): ?>
+                <img class="djebel-plugin-static-content-post-single-featured-image" src="<?php echo $featured_image_url_esc; ?>" alt="<?php echo Djebel_App_HTML::encodeEntities($post_rec['title']); ?>" />
             <?php endif; ?>
 
             <div class="djebel-plugin-static-content-post-single-content">
@@ -1307,6 +1319,9 @@ class Djebel_Plugin_Static_Content
             }
         }
 
+        $featured_image = empty($meta['featured_image']) ? '' : $meta['featured_image'];
+        $featured_image_url = $this->generateFeaturedImageUrl($featured_image);
+
         // Get default fields to ensure all fields are present
         $defaults = $this->getDefaultDataFields();
 
@@ -1318,6 +1333,7 @@ class Djebel_Plugin_Static_Content
             'content' => $html_content,
             'status' => $status,
             'file' => $file,
+            'featured_image_url' => $featured_image_url,
         ];
 
         // Build data by merging: defaults -> meta -> override fields
@@ -1416,6 +1432,32 @@ class Djebel_Plugin_Static_Content
         $content_url = Dj_App_Hooks::applyFilter('app.plugin.static_content.content_url', $content_url, $ctx);
 
         return $content_url;
+    }
+
+    /**
+     * Turns a post's featured_image value into the URL its img tag uses. A site path such as
+     * /dj-content/files/images/my-post.webp gets the site's web path, the same as a link in
+     * the post; an http(s) or protocol-relative URL is returned as written.
+     * @param string $featured_image The featured_image front matter value
+     * @return string Image URL, empty when there is none
+     */
+    public function generateFeaturedImageUrl($featured_image)
+    {
+        // A value written in [brackets] arrives as an array.
+        if (empty($featured_image) || !is_string($featured_image)) {
+            return '';
+        }
+
+        // A // prefix is a protocol-relative URL that points off the site.
+        $is_site_path = (strpos($featured_image, '/') === 0) && (strpos($featured_image, '//') !== 0);
+        $featured_image_url = $featured_image;
+
+        if ($is_site_path) {
+            $req_obj = Dj_App_Request::getInstance();
+            $featured_image_url = $req_obj->url($featured_image);
+        }
+
+        return $featured_image_url;
     }
 
     /**
@@ -1664,6 +1706,43 @@ class Djebel_Plugin_Static_Content
         }
 
         return strcasecmp($a['title'], $b['title']);
+    }
+
+    /**
+     * Adds the site's web path to markdown links and images that start at the site root, so
+     * a writer types [contact us](/contact) and it still works when the site runs under a
+     * sub-path, such as a dev copy at /projects/my-site/.
+     * @param string $content Raw markdown content
+     * @return string Markdown whose site-root links point into the site
+     */
+    public function processSiteLinks($content)
+    {
+        $req_obj = Dj_App_Request::getInstance();
+        $site_root_url = $req_obj->url();
+
+        // At the domain root the site's root URL is '/', which leaves nothing to add.
+        if ($site_root_url == '/') {
+            return $content;
+        }
+
+        $link_start = '](/';
+
+        if (strpos($content, $link_start) === false) {
+            return $content;
+        }
+
+        $site_link_start = '](' . $site_root_url;
+        $content = str_replace($link_start, $site_link_start, $content);
+
+        // A protocol-relative link such as //cdn.example.com leaves the site, so it goes back
+        // the way it was written.
+        $protocol_link_start = $site_link_start . '/';
+
+        if (strpos($content, $protocol_link_start) !== false) {
+            $content = str_replace($protocol_link_start, '](//', $content);
+        }
+
+        return $content;
     }
 
     /**
