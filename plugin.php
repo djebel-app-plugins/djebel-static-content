@@ -32,12 +32,6 @@ class Djebel_Plugin_Static_Content
 
     public const DEFAULT_RECORDS_PER_PAGE = 25;
 
-    // Content linking constants for max performance
-    public const LINK_PREFIX = '(@dj:';
-    public const HASH_MIN_LEN = 8;
-    public const HASH_MAX_LEN = 15;
-    public const BRACKET_BACKTRACK_LIMIT = 100;
-
     // Hash ID URL marker: -dj-HASH (e.g., getting-started-dj-abc123def456)
     public const HASH_MARKER = '-dj-';
 
@@ -77,12 +71,7 @@ class Djebel_Plugin_Static_Content
         // Hook into theme's page file candidates to add content template options
         Dj_App_Hooks::addFilter('app.themes.current_theme_page_file_candidates', [$this, 'addPageFileCandidates']);
 
-        // Priority 10, ahead of the default: (@dj:hash_id) links resolve to URLs that already
-        // carry the web path, and must not get it twice.
-        Dj_App_Hooks::addFilter('app.plugins.markdown.pre_process_content', [$this, 'processSiteLinks'], 10);
-
-        // Hook into markdown pre-processing for (@dj:hash_id) content links
-        Dj_App_Hooks::addFilter('app.plugins.markdown.pre_process_content', [$this, 'processContentLinks']);
+        Dj_App_Hooks::addFilter('app.plugins.markdown.pre_process_content', [$this, 'processSiteLinks']);
 
         // Load site content early - stores content in Page object for theme to render
         $this->loadSiteContent();
@@ -1776,124 +1765,6 @@ class Djebel_Plugin_Static_Content
         }
 
         return $content;
-    }
-
-    /**
-     * Process content links in markdown before conversion to HTML
-     * Scans for (@dj:hash_id) pattern and resolves to actual URLs
-     * Supports multiple syntaxes:
-     * - (@dj:hash_id) - bare, auto-title
-     * - [](@dj:hash_id) - empty brackets, auto-title
-     * - [Custom Text](@dj:hash_id) - custom text
-     * @param string $content Raw markdown content
-     * @param array $ctx Context information
-     * @return string Processed markdown with resolved links
-     */
-    public function processContentLinks($content, $ctx = [])
-    {
-        // Early exit if no links to process
-        if (strpos($content, self::LINK_PREFIX) === false) {
-            return $content;
-        }
-
-        $pos = 0;
-        $link_prefix_len = strlen(self::LINK_PREFIX);
-
-        // Get all content data (cached) - only called if links exist
-        $content_data = $this->getContentData($ctx);
-
-        while (($pos = strpos($content, self::LINK_PREFIX, $pos)) !== false) {
-            // Backtrack to find opening [ (optional)
-            $bracket_start = $this->findOpeningBracket($content, $pos);
-            $has_brackets = $bracket_start !== false;
-
-            // Extract link text (could be empty for auto-title)
-            $link_text = '';
-
-            if ($has_brackets) {
-                // The text ends before the ] that sits right before the ( at $pos.
-                $link_text_start = $bracket_start + 1;
-                $link_text_len = $pos - $bracket_start - 2;
-                $link_text = substr($content, $link_text_start, $link_text_len);
-            }
-
-            // Parse forward to get hash_id (find closing paren)
-            $ref_start = $pos + $link_prefix_len;
-            $paren_end = strpos($content, ')', $ref_start);
-
-            if ($paren_end === false) {
-                $pos++;
-                continue;
-            }
-
-            $hash_id_len = $paren_end - $ref_start;
-            $hash_id = substr($content, $ref_start, $hash_id_len);
-
-            // Validate hash_id: length check first (fastest), then alphanumeric
-            $hash_len = strlen($hash_id);
-
-            if ($hash_len < self::HASH_MIN_LEN || $hash_len > self::HASH_MAX_LEN || !ctype_alnum($hash_id)) {
-                $pos++;
-                continue;
-            }
-
-            // Lookup hash_id in content data
-            if (isset($content_data[$hash_id])) {
-                $url = $content_data[$hash_id]['url'];
-                $title = $content_data[$hash_id]['title'];
-                $text = empty($link_text) ? $title : $link_text;
-
-                // Build new pattern: standard markdown link [text](url), or the text alone for a
-                // post with no page to link to
-                if (!empty($url)) {
-                    $new_pattern = '[' . $text . '](' . $url . ')';
-                } else {
-                    $new_pattern = $text;
-                }
-
-                // This occurrence only: (@dj:hash) is also the tail of [text](@dj:hash), so a
-                // replace-all from a bare link would rewrite the inside of a bracketed one.
-                $replace_start = $has_brackets ? $bracket_start : $pos;
-                $replace_len = $paren_end + 1 - $replace_start;
-                $content = substr_replace($content, $new_pattern, $replace_start, $replace_len);
-                $pos = $replace_start + strlen($new_pattern) - 1;
-            }
-
-            $pos++;
-        }
-
-        return $content;
-    }
-
-    /**
-     * Find opening bracket by backtracking from a position
-     * Looks for [ before the current position with reasonable backtrack limit
-     * Stops if ] is encountered first (malformed)
-     * @param string $content The content to search
-     * @param int $pos Starting position to backtrack from
-     * @return int|false Position of [ or false if not found
-     */
-    private function findOpeningBracket($content, $pos)
-    {
-        // Only a ] right before the ( makes this a [text](...) link, and that ] is this link's own.
-        if (($pos == 0) || ($content[$pos - 1] !== ']')) {
-            return false;
-        }
-
-        $start_pos = max(0, $pos - self::BRACKET_BACKTRACK_LIMIT);
-
-        // Backtrack to find [
-        for ($i = $pos - 2; $i >= $start_pos; $i--) {
-            if ($content[$i] === ']') {
-                return false; // Found closing bracket before opening - malformed
-            }
-
-            if ($content[$i] === '[') {
-                return $i; // Found opening bracket
-            }
-        }
-
-        return false;
     }
 
     /**

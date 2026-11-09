@@ -176,20 +176,14 @@ and not invented:
 
 ## Content Linking
 
-Link to other content using the `(@dj:hash_id)` syntax:
+Link to another post with its address from the site root, hash included:
 
 ```markdown
-# Auto-titled link (uses the target's title as link text)
-Check out (@dj:abc123def456)
-
-# Empty brackets (also auto-titled)
-See also [](@dj:abc123def456)
-
-# Custom link text
-Read the [Getting Started Guide](@dj:abc123def456)
+Read the [Getting Started Guide](/blog/getting-started-dj-abc123def456)
 ```
 
-The `hash_id` must be 10-15 alphanumeric characters matching the target content's hash.
+The address is the collection, the post's slug, then `-dj-` and its hash. It is written the same
+way in a post and in a markdown page.
 
 ## Text Added to Every Post
 

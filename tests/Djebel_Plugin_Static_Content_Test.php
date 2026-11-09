@@ -411,37 +411,6 @@ class Djebel_Plugin_Static_Content_Test extends TestCase
     }
 
     /**
-     * Pins that a content link to a post with no hash keeps its text, with no empty link around it,
-     * and that a link to a post with a hash stays a link.
-     */
-    public function testProcessContentLinksPrintsTextForAPostWithNoHash()
-    {
-        $content = 'Read [the intro](@dj:introduction) and [the post](@dj:abc123def456).';
-        $link_ctx = [ 'content_id' => 'blog', ];
-        $call_args = [ $content, $link_ctx, ];
-        $result = $this->callOverCommittedPosts('processContentLinks', $call_args);
-
-        $this->assertStringContainsString('Read the intro and', $result);
-        $this->assertStringContainsString('[the post](', $result);
-    }
-
-    /**
-     * Pins all three documented link forms: bare and empty brackets take the post's title, and
-     * custom text replaces it. A bare link right at the start has nothing before it to read.
-     */
-    public function testProcessContentLinksHandlesEachLinkForm()
-    {
-        $content = '(@dj:abc123def456) [](@dj:abc123def456) [Custom](@dj:fedcba654321)';
-        $link_ctx = [ 'content_id' => 'blog', ];
-        $call_args = [ $content, $link_ctx, ];
-        $result = $this->callOverCommittedPosts('processContentLinks', $call_args);
-
-        $this->assertStringContainsString('[Custom](', $result);
-        $this->assertStringNotContainsString('@dj:', $result);
-        $this->assertStringNotContainsString('][', $result);
-    }
-
-    /**
      * Pins the whole point of the method: a link and an image written from the site root
      * land inside the site when it runs under a sub-path.
      */
