@@ -8,3 +8,8 @@
   2026-10-28: core `get()` keeps `'0'`, and djebel-app carries the fix. Done 2026-11-05 (run: on
   a site on that core, `/blog?dj_cache=0` took as long as `?dj_cache=no`, 0.067s against 0.046s
   from the cache; on a site still on the older core, `=0` stayed at the cached time).
+- [ ] [P150] Two shortcodes for one collection that differ in URL params (`content_prefix`,
+  `content_prefix_dir`, `include_content_prefix`) share one cache entry, so whichever renders
+  second shows the first one's URLs: the cache key is the plugin id and the collection id only
+  (`plugin.php:793`), while `generateContentData()` builds each record's URL from those params
+  (`plugin.php:871-930`) (read, not run, 2026-11-07).
