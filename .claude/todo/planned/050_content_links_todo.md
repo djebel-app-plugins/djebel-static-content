@@ -9,3 +9,12 @@
   hash up in the `default` collection. Read, not run: `findOpeningBracket()`
   (`plugin.php:1835`) starts at `$pos - 1`, the `]` of `[text]`, so the custom-text form would
   still lose its text once the lookup works.
+- [ ] [P150] djebel-markdown's `.claude/CLAUDE.md` ("5. Content Linking"),
+  `.claude/markdown-format.md` ("Content Linking") and `readme.txt` (`:41`, `:61`) document the
+  links as its own feature, resolved through an `app.plugins.markdown.resolve_content_reference`
+  hook with 10-15 character hashes. Nothing fires that hook (a grep of both plugins finds it only
+  in those docs); this plugin resolves the links on `pre_process_content` (`plugin.php:85`) and
+  takes 8-15 characters (`plugin.php:37-38`) (read, 2026-11-07). Done when those sections are
+  gone from djebel-markdown's docs and `.claude/content-guide.md` here is the one place that
+  documents the syntax, with the 8-15 the code takes instead of its own "10-15"
+  (`content-guide.md:192`).
