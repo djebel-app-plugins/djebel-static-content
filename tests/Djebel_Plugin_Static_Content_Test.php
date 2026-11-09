@@ -293,11 +293,13 @@ class Djebel_Plugin_Static_Content_Test extends TestCase
     }
 
     /**
-     * Pins that only a page asking for one hash is checked: the collection scan asks for none, so
-     * a post with no hash stays listed under its slug, and so does one whose hash field is a list.
-     * The digits, dashes and underscores a file name starts with stay out of that slug.
+     * Calls one plugin method over the committed posts, with the cache off and the scan listeners
+     * in place only for the call. The web path filter stays, for tearDown to take off.
+     * @param string $method_name
+     * @param array $call_args
+     * @return mixed what the method returned
      */
-    public function testGetContentDataListsAPostCarryingNoHash()
+    public function callOverCommittedPosts($method_name, $call_args)
     {
         Dj_App_Hooks::addFilter('app.core.request.web_path', ['Djebel_Plugin_Static_Content_Test', 'filterRootWebPath']);
         Dj_App_Hooks::addFilter('app.plugin.static_content.scan_dirs', ['Djebel_Plugin_Static_Content_Test', 'filterScanDirs']);
@@ -309,8 +311,7 @@ class Djebel_Plugin_Static_Content_Test extends TestCase
             $saved_cache_param = $req_obj->get('dj_cache');
             $req_obj->set('dj_cache', '0');
 
-            $data_params = [ 'content_id' => 'blog', ];
-            $content_data = $this->plugin_obj->getContentData($data_params);
+            $result = call_user_func_array([$this->plugin_obj, $method_name], $call_args);
         } finally {
             $req_obj->set('dj_cache', $saved_cache_param);
             $is_scan_removed = Dj_App_Hooks::removeFilter('app.plugin.static_content.scan_dirs', ['Djebel_Plugin_Static_Content_Test', 'filterScanDirs']);
@@ -319,10 +320,125 @@ class Djebel_Plugin_Static_Content_Test extends TestCase
 
         $this->assertTrue($is_scan_removed, 'the scan listener came off');
         $this->assertTrue($is_parser_removed, 'the front matter listener came off');
+
+        return $result;
+    }
+
+    /**
+     * Pins that only a page asking for one hash is checked: the collection scan asks for none, so
+     * a post with no hash stays listed under its slug, and so does one whose hash field is a list.
+     * The digits, dashes and underscores a file name starts with stay out of that slug.
+     */
+    public function testGetContentDataListsAPostCarryingNoHash()
+    {
+        $data_params = [ 'content_id' => 'blog', ];
+        $call_args = [ $data_params, ];
+        $content_data = $this->callOverCommittedPosts('getContentData', $call_args);
+
         $this->assertArrayHasKey('abc123def456', $content_data);
         $this->assertArrayHasKey('introduction', $content_data);
         $this->assertArrayHasKey('array-hash', $content_data);
         $this->assertArrayHasKey('numbered-post', $content_data);
+    }
+
+    /**
+     * Pins that only a post with a hash gets a link, since a post without one has no page to open.
+     */
+    public function testGetContentDataGivesAPostWithNoHashNoUrl()
+    {
+        $data_params = [ 'content_id' => 'blog', ];
+        $call_args = [ $data_params, ];
+        $content_data = $this->callOverCommittedPosts('getContentData', $call_args);
+
+        $this->assertEmpty($content_data['introduction']['url']);
+        $this->assertStringContainsString('-dj-abc123def456', $content_data['abc123def456']['url']);
+    }
+
+    /**
+     * Pins that a slug-mode collection, whose posts carry no hash by design, keeps its links.
+     */
+    public function testGetContentDataKeepsTheUrlInSlugMode()
+    {
+        $options_obj = Dj_App_Options::getInstance();
+
+        try {
+            $options_data = $options_obj->toArray();
+            $slug_options_data = $options_data;
+            $slug_options_data['plugins']['djebel_static_content']['blog']['use_content_slugs'] = 1;
+            $options_obj->setData($slug_options_data);
+
+            $data_params = [ 'content_id' => 'blog', ];
+            $call_args = [ $data_params, ];
+            $content_data = $this->callOverCommittedPosts('getContentData', $call_args);
+        } finally {
+            $options_obj->setData($options_data);
+        }
+
+        $this->assertNotEmpty($content_data['introduction']['url']);
+    }
+
+    /**
+     * Pins the line the scan leaves for a post with no hash, which is how its author finds out why
+     * it has no link. Only what the scan appends is read back.
+     */
+    public function testGetContentDataLogsAPostWithNoHash()
+    {
+        $log_file = Dj_App_Log::file();
+        $log_size_before = is_file($log_file) ? filesize($log_file) : 0;
+
+        $data_params = [ 'content_id' => 'blog', ];
+        $call_args = [ $data_params, ];
+        $this->assertNotEmpty($this->callOverCommittedPosts('getContentData', $call_args));
+
+        $read_res = Dj_App_File_Util::readPartially($log_file, 8192, $log_size_before);
+
+        $this->assertStringContainsString('introduction.md', $read_res->output);
+        $this->assertStringNotContainsString('front_matter_hash.md', $read_res->output);
+    }
+
+    /**
+     * Pins that the listing shows a post with no hash by its title alone and still links the rest.
+     */
+    public function testRenderContentPrintsNoLinkForAPostWithNoHash()
+    {
+        $render_params = [ 'content_id' => 'blog', 'results_per_page' => 50, ];
+        $call_args = [ $render_params, ];
+        $html = $this->callOverCommittedPosts('renderContent', $call_args);
+
+        $this->assertStringContainsString('-dj-abc123def456', $html);
+        $this->assertStringContainsString('introduction', $html);
+        $this->assertStringNotContainsString('-dj-introduction', $html);
+    }
+
+    /**
+     * Pins that a content link to a post with no hash keeps its text, with no empty link around it,
+     * and that a link to a post with a hash stays a link.
+     */
+    public function testProcessContentLinksPrintsTextForAPostWithNoHash()
+    {
+        $content = 'Read [the intro](@dj:introduction) and [the post](@dj:abc123def456).';
+        $link_ctx = [ 'content_id' => 'blog', ];
+        $call_args = [ $content, $link_ctx, ];
+        $result = $this->callOverCommittedPosts('processContentLinks', $call_args);
+
+        $this->assertStringContainsString('Read the intro and', $result);
+        $this->assertStringContainsString('[the post](', $result);
+    }
+
+    /**
+     * Pins all three documented link forms: bare and empty brackets take the post's title, and
+     * custom text replaces it. A bare link right at the start has nothing before it to read.
+     */
+    public function testProcessContentLinksHandlesEachLinkForm()
+    {
+        $content = '(@dj:abc123def456) [](@dj:abc123def456) [Custom](@dj:fedcba654321)';
+        $link_ctx = [ 'content_id' => 'blog', ];
+        $call_args = [ $content, $link_ctx, ];
+        $result = $this->callOverCommittedPosts('processContentLinks', $call_args);
+
+        $this->assertStringContainsString('[Custom](', $result);
+        $this->assertStringNotContainsString('@dj:', $result);
+        $this->assertStringNotContainsString('][', $result);
     }
 
     /**

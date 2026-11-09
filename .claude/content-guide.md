@@ -73,7 +73,7 @@ hash: 40471b3535bd
 | `category` | Yes | Single category |
 | `tags` | Yes | Comma-separated tags |
 | `status` | Yes | `published` or `draft` |
-| `hash` | In hash mode, unless the file name has `-dj-HASH` | 12-char hex identifier for URLs (`hash_id` or `id` also work). A post with none of them is listed but has no page of its own |
+| `hash` | In hash mode, unless the file name has `-dj-HASH` | 12-char hex identifier for URLs (`hash_id` or `id` also work). A post with none of them is listed with no link, has no page of its own, and the scan logs a warning |
 | `publish_date` | Optional | Scheduled publication date. Falls back to `creation_date` |
 | `slug` | Recommended | Custom URL slug. Auto-generated from the filename if omitted — define it so a file rename doesn't change the URL |
 | `sort_order` | Optional | Numeric sort order (default: 0) |
@@ -244,9 +244,8 @@ djebel-static-content.inject_config_content = 0
 File: `blog/2026/02/2026-02-15-my-article.md` with `hash: 40471b3535bd`
 URL: `/blog/my-article-dj-40471b3535bd`
 
-### Slug mode (per-collection config)
-File: `docs/intro/01-introduction-xyz789abc123.md` with `slug: introduction`
-URL: `/docs/introduction`
+### Slug mode (not yet supported, parked for now)
+`/collection/slug` URLs don't open a post yet, so use hash mode.
 
 ## Full Example: Blog Post
 

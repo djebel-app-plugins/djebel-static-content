@@ -706,9 +706,13 @@ class Djebel_Plugin_Static_Content
             <?php foreach ($content_data as $post_rec): ?>
                 <article class="djebel-plugin-static-content-post">
                     <h3 class="djebel-plugin-static-content-post-title">
-                        <a href="<?php echo Djebel_App_HTML::encodeEntities($post_rec['url']); ?>">
+                        <?php if (!empty($post_rec['url'])): ?>
+                            <a href="<?php echo Djebel_App_HTML::encodeEntities($post_rec['url']); ?>">
+                                <?php echo Djebel_App_HTML::encodeEntities($post_rec['title']); ?>
+                            </a>
+                        <?php else: ?>
                             <?php echo Djebel_App_HTML::encodeEntities($post_rec['title']); ?>
-                        </a>
+                        <?php endif; ?>
                     </h3>
 
                     <?php if ($show_date || $show_author || $show_category): ?>
@@ -929,7 +933,19 @@ class Djebel_Plugin_Static_Content
                 $ctx = ['content_rec' => $content_rec, 'scan_dir' => $scan_dir];
                 $url_params = Dj_App_Hooks::applyFilter('app.plugin.static_content.url_params', $url_params, $ctx);
 
-                $content_rec['url'] = $this->generateContentUrl($url_params);
+                if (!empty($content_res_obj->has_page)) {
+                    $content_rec['url'] = $this->generateContentUrl($url_params);
+                } else {
+                    $content_rec['url'] = '';
+
+                    $log_data = [
+                        'msg' => 'Post has no hash, so it is listed without a link',
+                        'file' => $file,
+                    ];
+
+                    Dj_App_Log::warn($log_data, __METHOD__);
+                }
+
                 $content_rec['content_id'] = $content_id; // Store content_id in record
 
                 // Index by hash_id (which is slug in slug mode)
@@ -1355,6 +1371,9 @@ class Djebel_Plugin_Static_Content
 
         $res_obj->status(true);
         $res_obj->item = $data;
+
+        // A post in hash mode opens only by its own hash, so the slug standing in gives it no page.
+        $res_obj->has_page = $use_slugs || !empty($file_hash_id);
 
         return $res_obj;
     }
@@ -1792,8 +1811,9 @@ class Djebel_Plugin_Static_Content
             $link_text = '';
 
             if ($has_brackets) {
+                // The text ends before the ] that sits right before the ( at $pos.
                 $link_text_start = $bracket_start + 1;
-                $link_text_len = $pos - $bracket_start - 1;
+                $link_text_len = $pos - $bracket_start - 2;
                 $link_text = substr($content, $link_text_start, $link_text_len);
             }
 
@@ -1823,13 +1843,20 @@ class Djebel_Plugin_Static_Content
                 $title = $content_data[$hash_id]['title'];
                 $text = empty($link_text) ? $title : $link_text;
 
-                // Build old pattern: [text](@dj:hash) or (@dj:hash) depending on brackets
-                $old_pattern = ($has_brackets ? '[' . $link_text . ']' : '') . self::LINK_PREFIX . $hash_id . ')';
+                // Build new pattern: standard markdown link [text](url), or the text alone for a
+                // post with no page to link to
+                if (!empty($url)) {
+                    $new_pattern = '[' . $text . '](' . $url . ')';
+                } else {
+                    $new_pattern = $text;
+                }
 
-                // Build new pattern: standard markdown link [text](url)
-                $new_pattern = '[' . $text . '](' . $url . ')';
-
-                $content = str_replace($old_pattern, $new_pattern, $content);
+                // This occurrence only: (@dj:hash) is also the tail of [text](@dj:hash), so a
+                // replace-all from a bare link would rewrite the inside of a bracketed one.
+                $replace_start = $has_brackets ? $bracket_start : $pos;
+                $replace_len = $paren_end + 1 - $replace_start;
+                $content = substr_replace($content, $new_pattern, $replace_start, $replace_len);
+                $pos = $replace_start + strlen($new_pattern) - 1;
             }
 
             $pos++;
@@ -1848,10 +1875,15 @@ class Djebel_Plugin_Static_Content
      */
     private function findOpeningBracket($content, $pos)
     {
+        // Only a ] right before the ( makes this a [text](...) link, and that ] is this link's own.
+        if (($pos == 0) || ($content[$pos - 1] !== ']')) {
+            return false;
+        }
+
         $start_pos = max(0, $pos - self::BRACKET_BACKTRACK_LIMIT);
 
         // Backtrack to find [
-        for ($i = $pos - 1; $i >= $start_pos; $i--) {
+        for ($i = $pos - 2; $i >= $start_pos; $i--) {
             if ($content[$i] === ']') {
                 return false; // Found closing bracket before opening - malformed
             }

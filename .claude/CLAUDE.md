@@ -42,7 +42,7 @@ For example, `[djebel_static_content id="blog"]` reads from the `blog/` director
 ## URL Modes
 
 - **Hash mode (default):** URLs include a hash suffix: `/blog/getting-started-dj-abc123def456`
-- **Slug mode:** Clean URLs without hash: `/docs/introduction` (enabled per-collection via config)
+- **Slug mode:** not yet supported, parked for now: `/docs/introduction` style URLs don't open a post
 
 ## Key Hooks
 

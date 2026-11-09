@@ -22,14 +22,17 @@ per file once per cache window.
 ### 1. Hash Mode (default)
 - **URLs**: `/collection/slug-dj-abc123def456` (hash appended to slug)
 - Content indexed by hash_id: front matter `hash_id` > `hash` > `id` meta,
-  or a `-dj-HASH` marker in the filename. A post with neither is listed under
-  its slug but has no page of its own
+  or a `-dj-HASH` marker in the filename. A post with neither is listed by its
+  title with no link, has no page of its own, and the scan logs a warning
 - **Example**: `/blog/getting-started-dj-abc123def456`
 
-### 2. Slug Mode (per-collection config)
-- **URLs**: `/collection/slug` (clean URLs, no hash)
+### 2. Slug Mode (not yet supported, parked for now)
+
+`/collection/slug` URLs don't open a post yet, so a collection that needs post
+pages stays on hash mode. What the setting does today:
+
 - Content indexed by slug (hash_id = slug internally)
-- **Example**: `/pages/about`
+- Links are built as `/collection/slug`
 
 ```ini
 [plugins]
