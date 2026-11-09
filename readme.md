@@ -22,7 +22,8 @@ per file once per cache window.
 ### 1. Hash Mode (default)
 - **URLs**: `/collection/slug-dj-abc123def456` (hash appended to slug)
 - Content indexed by hash_id: front matter `hash_id` > `hash` > `id` meta,
-  or a `-dj-HASH` marker in the filename; falls back to the slug
+  or a `-dj-HASH` marker in the filename. A post with neither is listed under
+  its slug but has no page of its own
 - **Example**: `/blog/getting-started-dj-abc123def456`
 
 ### 2. Slug Mode (per-collection config)
@@ -97,8 +98,10 @@ sort_order: 10
 featured_image: /dj-content/files/images/2025/01/2025-01-20-my-post.webp
 ```
 
-All fields are optional. `hash` is a 12-char hex id (generate:
-`openssl rand -hex 6`) — it keeps post URLs stable across renames.
+All fields are optional, but in hash mode a post needs a `hash` (`hash_id`
+or `id` also work), or a `-dj-HASH` file name, to open on its own page. `hash`
+is a 12-char hex id (generate: `openssl rand -hex 6`) — it keeps post URLs
+stable across renames.
 Define `slug` explicitly too: when omitted it is derived from the
 filename, so renaming the file changes the URL. Setting both `slug`
 and `hash` pins the URL for good.

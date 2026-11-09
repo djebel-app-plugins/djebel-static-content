@@ -49,6 +49,283 @@ class Djebel_Plugin_Static_Content_Test extends TestCase
     }
 
     /**
+     * Stands in for a site's cached collection: each key is a hash a page can ask for, and each
+     * record names the file to open.
+     * @param array $records
+     * @return array
+     */
+    public static function filterCachedRecords($records)
+    {
+        $data_dir = __DIR__ . '/data/single_post';
+
+        $records = [
+            'abc123def456' => [ 'file' => $data_dir . '/front_matter_hash.md', ],
+            'fedcba654321' => [ 'file' => $data_dir . '/file_name-dj-fedcba654321.md', ],
+            'f00d1234abcd' => [ 'file' => $data_dir . '/front_matter_hash.md', ],
+            'documentation' => [ 'file' => $data_dir . '/documentation.txt', ],
+            '0e2222222222' => [ 'file' => $data_dir . '/zero_e_hash.md', ],
+            'introduction' => [ 'file' => $data_dir . '/introduction.md', ],
+            'a1b2c3d4e5f6' => [ 'file' => $data_dir . '/array_hash.md', ],
+            '333333333333' => [ 'file' => $data_dir . '/all_ids.md', ],
+            '222222222222' => [ 'file' => $data_dir . '/all_ids.md', ],
+            '555555555555' => [ 'file' => $data_dir . '/hash_and_id.md', ],
+            '444444444444' => [ 'file' => $data_dir . '/hash_and_id.md', ],
+        ];
+
+        return $records;
+    }
+
+    /**
+     * Stands in for the markdown plugin, which this suite does not load: the whole file is the
+     * content, and the id lines are the only front matter read.
+     * @param string $content
+     * @param array $ctx
+     * @return Dj_App_Result
+     */
+    public static function filterParseFrontMatter($content, $ctx = [])
+    {
+        $res_obj = new Dj_App_Result();
+        $read_res = Dj_App_File_Util::read($ctx['file']);
+        $meta = [];
+        $matches = [];
+
+        // A line that is only an id field, the value optionally in [brackets], which front matter
+        // parsing turns into an array. Matches "hash: abc123" and "id: [abc]", not "a hash: abc".
+        if (preg_match_all('/^(hash_id|hash|id):\s*(\[?)(\w+)\]?\s*$/m', $read_res->output, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $id_line) {
+                $field_name = $id_line[1];
+                $meta[$field_name] = empty($id_line[2]) ? $id_line[3] : [ $id_line[3], ];
+            }
+        }
+
+        $res_obj->meta = $meta;
+        $res_obj->content = $read_res->output;
+        $res_obj->status(true);
+
+        return $res_obj;
+    }
+
+    /**
+     * Points the collection scan at the committed posts.
+     * @param array $scan_dirs
+     * @return array
+     */
+    public static function filterScanDirs($scan_dirs)
+    {
+        $scan_dirs = [ __DIR__ . '/data/single_post', ];
+
+        return $scan_dirs;
+    }
+
+    /**
+     * Renders the single-post page for one hash, with the listeners in place only for the call.
+     * The web path filter stays, for tearDown to take off.
+     * @param string|array $hash_id
+     * @return string
+     */
+    public function renderPostByHash($hash_id)
+    {
+        Dj_App_Hooks::addFilter('app.core.request.web_path', ['Djebel_Plugin_Static_Content_Test', 'filterRootWebPath']);
+        Dj_App_Hooks::addFilter('app.cache.pre_get.data', ['Djebel_Plugin_Static_Content_Test', 'filterCachedRecords']);
+        Dj_App_Hooks::addFilter('app.plugins.markdown.parse_front_matter', ['Djebel_Plugin_Static_Content_Test', 'filterParseFrontMatter']);
+
+        $req_obj = Dj_App_Request::getInstance();
+
+        try {
+            $saved_plugin_params = $req_obj->get('djebel_plugin_static_content_data', []);
+            $plugin_params = [ 'hash_id' => $hash_id, ];
+            $req_obj->set('djebel_plugin_static_content_data', $plugin_params);
+
+            $render_params = [ 'content_id' => 'blog', ];
+            $html = $this->plugin_obj->renderSingleContent($render_params);
+        } finally {
+            $req_obj->set('djebel_plugin_static_content_data', $saved_plugin_params);
+            $is_cache_removed = Dj_App_Hooks::removeFilter('app.cache.pre_get.data', ['Djebel_Plugin_Static_Content_Test', 'filterCachedRecords']);
+            $is_parser_removed = Dj_App_Hooks::removeFilter('app.plugins.markdown.parse_front_matter', ['Djebel_Plugin_Static_Content_Test', 'filterParseFrontMatter']);
+        }
+
+        $this->assertTrue($is_cache_removed, 'the cache listener came off');
+        $this->assertTrue($is_parser_removed, 'the front matter listener came off');
+
+        return $html;
+    }
+
+    /**
+     * Pins the normal case: a post that carries the requested hash in its front matter opens.
+     */
+    public function testRenderSingleContentOpensAPostWithTheHashInFrontMatter()
+    {
+        $html = $this->renderPostByHash('abc123def456');
+
+        $this->assertStringContainsString('Text of the post with a front matter hash.', $html);
+    }
+
+    /**
+     * Pins the other place a post may carry its hash: the -dj- marker in its file name.
+     */
+    public function testRenderSingleContentOpensAPostWithTheHashInItsName()
+    {
+        $html = $this->renderPostByHash('fedcba654321');
+
+        $this->assertStringContainsString('Text of the post with a file name hash.', $html);
+    }
+
+    /**
+     * Pins that a record cannot open a post under a hash the post doesn't carry.
+     */
+    public function testRenderSingleContentRefusesAFileCarryingAnotherHash()
+    {
+        $html = $this->renderPostByHash('f00d1234abcd');
+
+        $this->assertStringNotContainsString('Text of the post with a front matter hash.', $html);
+        $this->assertStringStartsWith('<!--', $html);
+    }
+
+    /**
+     * Pins that the slug a file name gives doesn't count as a hash, even when the slug is the very
+     * value that was asked for.
+     */
+    public function testRenderSingleContentRefusesAFileCarryingNoHash()
+    {
+        $html = $this->renderPostByHash('documentation');
+
+        $this->assertStringNotContainsString('Text of a file that is not a post.', $html);
+        $this->assertStringStartsWith('<!--', $html);
+    }
+
+    /**
+     * Pins the comparison as text: 0e1111111111 and 0e2222222222 are different hashes, though PHP's
+     * == reads both as the number zero.
+     */
+    public function testRenderSingleContentComparesHashesAsText()
+    {
+        $html = $this->renderPostByHash('0e2222222222');
+
+        $this->assertStringNotContainsString('Text of the post whose hash reads as a number.', $html);
+        $this->assertStringStartsWith('<!--', $html);
+    }
+
+    /**
+     * Pins that only text can name a post: a request parameter can hold an array, and the page
+     * answers with its no-post comment instead of failing.
+     */
+    public function testRenderSingleContentRefusesAHashThatIsNotText()
+    {
+        $hash_id_list = [ 'abc123def456', ];
+        $html = $this->renderPostByHash($hash_id_list);
+
+        $this->assertStringNotContainsString('Text of the post with a front matter hash.', $html);
+        $this->assertStringStartsWith('<!--', $html);
+    }
+
+    /**
+     * Pins that a list in a post's hash field counts as no hash: only text can be a hash.
+     */
+    public function testRenderSingleContentRefusesAFileWhoseHashIsAList()
+    {
+        $html = $this->renderPostByHash('a1b2c3d4e5f6');
+
+        $this->assertStringNotContainsString('Text of the post whose hash is a list.', $html);
+        $this->assertStringStartsWith('<!--', $html);
+    }
+
+    /**
+     * Pins hash_id as the field that names a post carrying several id fields.
+     */
+    public function testRenderSingleContentOpensAPostByItsHashId()
+    {
+        $html = $this->renderPostByHash('333333333333');
+
+        $this->assertStringContainsString('Text of the post with every id field.', $html);
+    }
+
+    /**
+     * Pins that the fields behind hash_id don't name the post as well.
+     */
+    public function testRenderSingleContentRefusesAHashBehindAHashId()
+    {
+        $html = $this->renderPostByHash('222222222222');
+
+        $this->assertStringNotContainsString('Text of the post with every id field.', $html);
+        $this->assertStringStartsWith('<!--', $html);
+    }
+
+    /**
+     * Pins hash ahead of id on a post with no hash_id.
+     */
+    public function testRenderSingleContentOpensAPostByItsHashBeforeItsId()
+    {
+        $html = $this->renderPostByHash('555555555555');
+
+        $this->assertStringContainsString('Text of the post with a hash and an id.', $html);
+    }
+
+    /**
+     * Pins that an id behind a hash doesn't name the post as well.
+     */
+    public function testRenderSingleContentRefusesAnIdBehindAHash()
+    {
+        $html = $this->renderPostByHash('444444444444');
+
+        $this->assertStringNotContainsString('Text of the post with a hash and an id.', $html);
+        $this->assertStringStartsWith('<!--', $html);
+    }
+
+    /**
+     * Pins that the loader compares no hash in a slug-mode collection, which has none to compare.
+     */
+    public function testRenderSingleContentOpensASlugModePost()
+    {
+        $options_obj = Dj_App_Options::getInstance();
+
+        try {
+            $options_data = $options_obj->toArray();
+            $slug_options_data = $options_data;
+            $slug_options_data['plugins']['djebel_static_content']['blog']['use_content_slugs'] = 1;
+            $options_obj->setData($slug_options_data);
+
+            $html = $this->renderPostByHash('introduction');
+        } finally {
+            $options_obj->setData($options_data);
+        }
+
+        $this->assertStringContainsString('Text of the post with no hash.', $html);
+    }
+
+    /**
+     * Pins that only a page asking for one hash is checked: the collection scan asks for none, so
+     * a post with no hash stays listed under its slug, and so does one whose hash field is a list.
+     * The digits, dashes and underscores a file name starts with stay out of that slug.
+     */
+    public function testGetContentDataListsAPostCarryingNoHash()
+    {
+        Dj_App_Hooks::addFilter('app.core.request.web_path', ['Djebel_Plugin_Static_Content_Test', 'filterRootWebPath']);
+        Dj_App_Hooks::addFilter('app.plugin.static_content.scan_dirs', ['Djebel_Plugin_Static_Content_Test', 'filterScanDirs']);
+        Dj_App_Hooks::addFilter('app.plugins.markdown.parse_front_matter', ['Djebel_Plugin_Static_Content_Test', 'filterParseFrontMatter']);
+
+        $req_obj = Dj_App_Request::getInstance();
+
+        try {
+            $saved_cache_param = $req_obj->get('dj_cache');
+            $req_obj->set('dj_cache', '0');
+
+            $data_params = [ 'content_id' => 'blog', ];
+            $content_data = $this->plugin_obj->getContentData($data_params);
+        } finally {
+            $req_obj->set('dj_cache', $saved_cache_param);
+            $is_scan_removed = Dj_App_Hooks::removeFilter('app.plugin.static_content.scan_dirs', ['Djebel_Plugin_Static_Content_Test', 'filterScanDirs']);
+            $is_parser_removed = Dj_App_Hooks::removeFilter('app.plugins.markdown.parse_front_matter', ['Djebel_Plugin_Static_Content_Test', 'filterParseFrontMatter']);
+        }
+
+        $this->assertTrue($is_scan_removed, 'the scan listener came off');
+        $this->assertTrue($is_parser_removed, 'the front matter listener came off');
+        $this->assertArrayHasKey('abc123def456', $content_data);
+        $this->assertArrayHasKey('introduction', $content_data);
+        $this->assertArrayHasKey('array-hash', $content_data);
+        $this->assertArrayHasKey('numbered-post', $content_data);
+    }
+
+    /**
      * Pins the whole point of the method: a link and an image written from the site root
      * land inside the site when it runs under a sub-path.
      */

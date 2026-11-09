@@ -511,7 +511,8 @@ class Djebel_Plugin_Static_Content
         $plugin_params = $req_obj->get($this->request_param_key, []);
         $hash_id = empty($plugin_params['hash_id']) ? '' : $plugin_params['hash_id'];
 
-        if (empty($hash_id)) {
+        // Only text can name a post: a request parameter can also hold an array.
+        if (empty($hash_id) || !is_string($hash_id)) {
             return "<!--\nNo post hash_id provided\n-->";
         }
 
@@ -537,6 +538,7 @@ class Djebel_Plugin_Static_Content
             'file' => $post_rec['file'],
             'full' => 1,
             'content_id' => $content_id,
+            'hash_id' => $hash_id,
         ];
 
         $post_res_obj = $this->loadPostFromMarkdown($load_params);
@@ -1202,8 +1204,9 @@ class Djebel_Plugin_Static_Content
     }
 
     /**
-     * Load post from markdown file
-     * @param array $params
+     * Load post from markdown file. Given a hash_id in hash mode, only a file that carries that
+     * hash in its front matter or its name loads.
+     * @param array $params file, full, content_id, hash_id
      * @return Dj_App_Result
      */
     private function loadPostFromMarkdown($params)
@@ -1255,6 +1258,29 @@ class Djebel_Plugin_Static_Content
             }
         }
 
+        // Check if collection uses slug mode
+        $options_obj = Dj_App_Options::getInstance();
+        $use_slugs = $options_obj->isEnabled("plugins.djebel-static-content.{$content_id}." . self::CONFIG_USE_CONTENT_SLUGS);
+
+        if ($use_slugs) {
+            $file_hash_id = '';
+        } else {
+            $file_hash_id = $this->getHash($meta);
+
+            if (empty($file_hash_id)) {
+                $parse_params = [ 'file' => $file, ];
+                $file_hash_id = $this->parseHashId($parse_params);
+            }
+
+            // A record only names the file, so the file has to carry the hash that was asked for.
+            // Compared as text: == reads 0e12 and 0e34 as the same number.
+            if (!empty($params['hash_id']) && ($file_hash_id !== $params['hash_id'])) {
+                $res_obj->msg = 'Post not found';
+
+                return $res_obj;
+            }
+        }
+
         $ctx['meta'] = $meta;
         $html_content = '';
 
@@ -1271,10 +1297,6 @@ class Djebel_Plugin_Static_Content
             $html_content = empty($html_content) ? $content : $html_content;
         }
 
-        // Check if collection uses slug mode
-        $options_obj = Dj_App_Options::getInstance();
-        $use_slugs = $options_obj->isEnabled("plugins.djebel-static-content.{$content_id}." . self::CONFIG_USE_CONTENT_SLUGS);
-
         // Generate slug
         if (empty($meta['slug'])) {
             $base_name = basename($file);
@@ -1282,7 +1304,7 @@ class Djebel_Plugin_Static_Content
 
             // In slug mode, use filename as-is; in hash mode, strip leading numbers/dashes
             if (!$use_slugs) {
-                $slug = preg_replace('#^[\d\-_]+#', '', $slug);
+                $slug = ltrim($slug, '0123456789-_');
             }
 
             $slug = Dj_App_String_Util::formatSlug($slug);
@@ -1303,21 +1325,8 @@ class Djebel_Plugin_Static_Content
             $title = str_replace('-', ' ', $title);
         }
 
-        // In slug mode, treat slug as hash_id; otherwise extract hash from meta/filename
-        if ($use_slugs) {
-            $hash_id = $slug;
-        } else {
-            $hash_id = $this->getHash($meta);
-
-            if (empty($hash_id)) {
-                $parse_params = [ 'file' => $file, ];
-                $hash_id = $this->parseHashId($parse_params);
-            }
-
-            if (empty($hash_id)) {
-                $hash_id = $slug;
-            }
-        }
+        // The slug stands in where there is no file hash: slug mode, or a post that carries none.
+        $hash_id = empty($file_hash_id) ? $slug : $file_hash_id;
 
         $featured_image = empty($meta['featured_image']) ? '' : $meta['featured_image'];
         $featured_image_url = $this->generateFeaturedImageUrl($featured_image);
@@ -1477,6 +1486,11 @@ class Djebel_Plugin_Static_Content
 
         if (empty($hash_id)) {
             $hash_id = empty($meta['id']) ? '' : $meta['id'];
+        }
+
+        // A value written in [brackets] arrives as an array, and only text can be a hash.
+        if (!is_string($hash_id)) {
+            return '';
         }
 
         return $hash_id;

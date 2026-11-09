@@ -23,7 +23,7 @@ blog/
 ```
 docs/
     {topic}/
-        NN-slug-HASH.md             <- Numbered for ordering
+        NN-slug-dj-HASH.md          <- Numbered for ordering
 ```
 
 ## File Naming
@@ -73,7 +73,7 @@ hash: 40471b3535bd
 | `category` | Yes | Single category |
 | `tags` | Yes | Comma-separated tags |
 | `status` | Yes | `published` or `draft` |
-| `hash` | Recommended | 12-char hex identifier for URLs |
+| `hash` | In hash mode, unless the file name has `-dj-HASH` | 12-char hex identifier for URLs (`hash_id` or `id` also work). A post with none of them is listed but has no page of its own |
 | `publish_date` | Optional | Scheduled publication date. Falls back to `creation_date` |
 | `slug` | Recommended | Custom URL slug. Auto-generated from the filename if omitted — define it so a file rename doesn't change the URL |
 | `sort_order` | Optional | Numeric sort order (default: 0) |
