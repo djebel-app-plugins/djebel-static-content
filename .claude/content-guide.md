@@ -95,8 +95,18 @@ Timestamp, in the site's time zone (`[site] timezone` in `app.ini`). The plugin 
 dates in that zone, so a time taken in another zone can hide a new post as scheduled for
 hours:
 ```bash
-TZ=<site timezone> date +"%Y-%m-%d %H:%M:%S"
+TZ=America/Toronto date +"%Y-%m-%d %H:%M:%S"
 ```
+
+More examples, one per zone:
+```bash
+TZ=Europe/London date +"%Y-%m-%d %H:%M:%S"
+TZ=Europe/Sofia date +"%Y-%m-%d %H:%M:%S"
+TZ=Asia/Tokyo date +"%Y-%m-%d %H:%M:%S"
+```
+
+Copy the zone name exactly as `app.ini` has it. A misspelled zone, such as `Europe/Londn`,
+falls back to UTC without any error.
 
 Hash (12-char unique identifier):
 ```bash
@@ -285,7 +295,7 @@ Create a new directory in `dj-content/plugins/`, add a `plugin.php`, and registe
 
 ## Quick Creation Checklist
 
-- [ ] Generate timestamp in the site's time zone: `TZ=<site timezone> date +"%Y-%m-%d %H:%M:%S"`
+- [ ] Generate timestamp in the site's time zone, as in the examples above: `TZ=America/Toronto date +"%Y-%m-%d %H:%M:%S"`
 - [ ] Generate hash: `openssl rand -hex 6`
 - [ ] Create filename: `YYYY-MM-DD-descriptive-slug.md`
 - [ ] Place in correct directory: `blog/YYYY/MM/` for blog posts
