@@ -95,7 +95,7 @@ Timestamp, in the site's time zone (`[site] timezone` in `app.ini`). The plugin 
 dates in that zone, so a time taken in another zone can hide a new post as scheduled for
 hours:
 ```bash
-TZ=America/Toronto date +"%Y-%m-%d %H:%M:%S"
+TZ=<site timezone> date +"%Y-%m-%d %H:%M:%S"
 ```
 
 Hash (12-char unique identifier):
